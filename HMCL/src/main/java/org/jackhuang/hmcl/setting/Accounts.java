@@ -138,11 +138,7 @@ public final class Accounts {
                 SettingsManager.gameAccounts(),
                 usedAccountIDs,
                 false);
-        boolean sharedChanged = LegacyConfigMigrator.assignAccountIDs(
-                SettingsManager.userGameAccounts(),
-                usedAccountIDs,
-                true);
-        return new AccountIDNormalization(localChanged, sharedChanged);
+        return new AccountIDNormalization(localChanged, false);
     }
 
     /// Result of normalizing account IDs across loaded metadata stores.
@@ -203,8 +199,6 @@ public final class Accounts {
         }
 
         List<AccountID> retainedAccountIDs = getAccountIDs(globalMetadata, portableMetadata);
-        if (!SettingsManager.isUserGameAccountsReadOnly())
-            SettingsManager.updateUserGameAccounts(globalMetadata, globalPrivateData, retainedAccountIDs);
         if (!SettingsManager.isGameAccountsReadOnly())
             SettingsManager.updateGameAccounts(portableMetadata, portablePrivateData, retainedAccountIDs);
     }
@@ -319,13 +313,6 @@ public final class Accounts {
                 if (JsonUtils.getBoolean(record, "selected", false)) {
                     selected = account;
                 }
-            }
-        }
-
-        for (JsonObject record : getUserAccountMetadataRecords()) {
-            Account account = parseAccount(record, false);
-            if (account != null) {
-                accounts.add(account);
             }
         }
 

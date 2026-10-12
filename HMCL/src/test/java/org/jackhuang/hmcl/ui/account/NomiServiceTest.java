@@ -96,9 +96,12 @@ class NomiServiceTest {
                 """).getAsJsonObject();
         var server = new AuthlibInjectorServer(NomiService.AUTH);
         var account = NomiService.accountFromSession(server, session);
+        assertTrue(account.isPortable());
         assertTrue(NomiService.permits(account));
         assertEquals("Alice", account.getProfileName());
         var renewed = NomiService.accountFromSession(server, session, account.getAccountID());
         assertEquals(account, renewed);
+        account.setPortable(false);
+        assertFalse(NomiService.permits(account));
     }
 }

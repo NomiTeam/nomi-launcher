@@ -532,8 +532,7 @@ public final class SettingsManager {
                 GAME_ACCOUNTS_FILE,
                 new AccountPrivateDataStore(gameAccountPrivateData(), GAME_ACCOUNT_PRIVATE_DATA_FILE),
                 List.of(
-                        new AccountPrivateDataStore(gameAccountPrivateData(), GAME_ACCOUNT_PRIVATE_DATA_FILE),
-                        new AccountPrivateDataStore(userGameAccountPrivateData(), USER_GAME_ACCOUNT_PRIVATE_DATA_FILE)),
+                        new AccountPrivateDataStore(gameAccountPrivateData(), GAME_ACCOUNT_PRIVATE_DATA_FILE)),
                 metadataAccounts,
                 privateData,
                 retainedAccountIDs,

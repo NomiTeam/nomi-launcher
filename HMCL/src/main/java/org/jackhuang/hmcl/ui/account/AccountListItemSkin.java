@@ -116,7 +116,7 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
             FXUtils.installFastTooltip(btnMove, i18n("account.move_to_portable"));
         }
         spinnerMove.setContent(btnMove);
-        right.getChildren().add(spinnerMove);
+        if (!NomiService.permits(skinnable.getAccount())) right.getChildren().add(spinnerMove);
 
         JFXButton btnRefresh = FXUtils.newToggleButton4(SVG.REFRESH);
         SpinnerPane spinnerRefresh = new SpinnerPane();

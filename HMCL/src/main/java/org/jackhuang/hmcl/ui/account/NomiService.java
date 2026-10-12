@@ -52,7 +52,7 @@ public final class NomiService {
 
     /// Accepts only accounts backed by the configured Nomi Yggdrasil root.
     public static boolean permits(@Nullable Account account) {
-        return account instanceof AuthlibInjectorAccount injector
+        return account != null && account.isPortable() && account instanceof AuthlibInjectorAccount injector
                 && injector.getServer().getUrl().replaceAll("/+$", "").equals(AUTH.replaceAll("/+$", ""));
     }
 
@@ -74,7 +74,9 @@ public final class NomiService {
         privateData.addProperty("accessToken", game.get("accessToken").getAsString());
         privateData.addProperty("clientToken", game.get("clientToken").getAsString());
         privateData.addProperty("profileName", selected.get("name").getAsString());
-        return Accounts.getAccountFactoryByAuthlibInjectorServer(server).fromStorage(metadata, privateData);
+        var account = Accounts.getAccountFactoryByAuthlibInjectorServer(server).fromStorage(metadata, privateData);
+        account.setPortable(true);
+        return account;
     }
 
     /// Sends JSON, returning an empty object for successful no-content responses.
