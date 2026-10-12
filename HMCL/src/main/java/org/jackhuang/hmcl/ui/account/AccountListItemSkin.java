@@ -18,6 +18,7 @@
 package org.jackhuang.hmcl.ui.account;
 
 import com.jfoenix.controls.JFXButton;
+import com.google.gson.JsonObject;
 import com.jfoenix.controls.JFXRadioButton;
 import com.jfoenix.effects.JFXDepthManager;
 import javafx.beans.binding.Bindings;
@@ -44,6 +45,9 @@ import org.jackhuang.hmcl.ui.FXUtils;
 import org.jackhuang.hmcl.ui.SVG;
 import org.jackhuang.hmcl.ui.construct.SpinnerPane;
 import org.jackhuang.hmcl.util.javafx.BindingMapping;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.concurrent.CompletableFuture;
 
 import static org.jackhuang.hmcl.util.i18n.I18n.i18n;
 
@@ -91,6 +95,13 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
 
         HBox right = new HBox();
         right.setAlignment(Pos.CENTER_RIGHT);
+
+        if (NomiService.permits(skinnable.getAccount())) {
+            JFXButton btnRename = FXUtils.newToggleButton4(SVG.EDIT);
+            FXUtils.installFastTooltip(btnRename, "改名");
+            btnRename.setOnAction(e -> renameAccount(skinnable));
+            right.getChildren().add(btnRename);
+        }
 
         JFXButton btnMove = new JFXButton();
         SpinnerPane spinnerMove = new SpinnerPane();
@@ -176,6 +187,51 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
         JFXDepthManager.setDepth(root, 1);
 
         getChildren().setAll(root);
+    }
+
+    /// Renames an authenticated Nomi profile and replaces its portable record without changing its UUID.
+    private static void renameAccount(AccountListItem item) {
+        Account account = item.getAccount();
+        if (!(account instanceof AuthlibInjectorAccount injector) || !NomiService.permits(account)) return;
+        if (Accounts.isAccountFilesReadOnly(account)) {
+            Controllers.showToast("账号文件只读，请先处理存储权限。");
+            return;
+        }
+        Controllers.prompt("改名（3 至 16 位字母、数字或下划线）", (value, handler) -> {
+            String name = value.trim();
+            if (!name.matches("[A-Za-z0-9_]{3,16}")) {
+                handler.reject("ID 须为 3 至 16 位字母、数字或下划线。");
+                return;
+            }
+            var privateData = new JsonObject();
+            account.writePrivateData(privateData);
+            String token = privateData.get("accessToken").getAsString();
+            var payload = new JsonObject();
+            payload.addProperty("name", name);
+            CompletableFuture.supplyAsync(() -> {
+                try {
+                    return NomiService.request("PATCH", "/api/v1/game/profiles/" + account.getProfileID() + "/name",
+                            payload, token);
+                } catch (Exception exception) {
+                    throw new java.util.concurrent.CompletionException(exception);
+                }
+            }).whenComplete((session, failure) -> javafx.application.Platform.runLater(() -> {
+                handler.resolve();
+                if (failure != null) {
+                    @Nullable Throwable cause = failure.getCause();
+                    Controllers.showToast(cause == null ? "改名失败，请重新尝试。" : cause.getMessage());
+                    return;
+                }
+                int index = Accounts.getAccounts().indexOf(account);
+                if (index >= 0) {
+                    var renamed = NomiService.accountFromSession(injector.getServer(), session, account.getAccountID());
+                    @Nullable Account selected = Accounts.getSelectedAccount();
+                    Accounts.getAccounts().set(index, renamed);
+                    if (account.equals(selected)) Accounts.setSelectedAccount(renamed);
+                }
+                Controllers.showToast("改名成功，账号 ID：" + name + "。请重新启动游戏。");
+            }));
+        }, account.getProfileName());
     }
 
     /// Moves the account between local and user account files.
