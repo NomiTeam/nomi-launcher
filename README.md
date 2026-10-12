@@ -16,11 +16,11 @@
 需要 JDK 17 或更高版本。Windows 执行：
 
 ```text
-gradlew.bat :HMCL:shadowJar -PnomiDefaultServer=play.missdrop.cn
+gradlew.bat :HMCL:makeExecutables -PnomiDefaultServer=play.missdrop.cn
 java -jar HMCL/build/libs/HMCL-3.17.SNAPSHOT.jar
 ```
 
-Linux/macOS 使用 `./gradlew`，产物名称以 `HMCL/build/libs/` 为准。
+Linux/macOS 使用 `./gradlew`。该任务生成 JAR、Windows EXE 和启动脚本，产物位于 `HMCL/build/libs/`；Windows 可直接运行 EXE，文件名以实际构建结果为准。
 
 自动进服地址由 `-PnomiDefaultServer` 或环境变量 `NOMI_DEFAULT_SERVER` 提供，不写死在源码中；不配置就不默认进服。实例明确设置的其他服务器或单人存档优先。
 
