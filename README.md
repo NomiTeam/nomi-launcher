@@ -22,7 +22,7 @@ gradlew.bat :HMCL:test --tests *NomiServiceTest :HMCL:shadowJar
 java -Dnomi.api.base=http://127.0.0.1:8000 -jar HMCL/build/libs/HMCL-3.17.SNAPSHOT.jar
 ```
 
-Linux 使用 `./gradlew`。以 `HMCL/build/libs/` 的实际文件名为准。默认地址是本机开发服务；公开部署前设置真实 HTTPS 服务地址。构建不包含 HMCL 官方签名。
+Linux 使用 `./gradlew`。以 `HMCL/build/libs/` 的实际文件名为准。默认地址是 https://auth.missdrop.cn；本机开发可通过 -Dnomi.api.base=http://127.0.0.1:8000 覆盖。构建不包含 HMCL 官方签名。
 
 新实例以及原先未指定进服目标的实例默认连接 `play.missdrop.cn`；已有其他服务器或单人存档目标的实例保持其设置。首页不再显示上游预览版提示，窗口标题使用 Nomi Launcher。
 
