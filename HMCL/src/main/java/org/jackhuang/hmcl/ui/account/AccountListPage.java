@@ -218,7 +218,7 @@ public final class AccountListPage extends DecoratorAnimatedPage implements Deco
                 ScrollPane scrollPane = new ScrollPane(boxMethods);
                 VBox.setVgrow(scrollPane, Priority.ALWAYS);
                 AdvancedListItem nomiItem = new AdvancedListItem();
-                nomiItem.setTitle("Nomi 登录与账号管理");
+                nomiItem.setTitle("Nomi 群验证码登录");
                 nomiItem.setLeftIcon(SVG.PERSON);
                 nomiItem.setOnAction(e -> Controllers.dialog(new NomiAccountPane()));
                 setLeft(new VBox(nomiItem));

@@ -17,19 +17,41 @@
  */
 package org.jackhuang.hmcl.ui.account;
 
-import com.sun.net.httpserver.HttpServer;
 import com.google.gson.JsonParser;
-import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorServer;
-import org.jetbrains.annotations.NotNullByDefault;
-import org.jetbrains.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-
+import com.sun.net.httpserver.HttpServer;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import javafx.application.Platform;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.DataFormat;
+import javafx.scene.layout.StackPane;
+import javafx.scene.paint.Color;
+import javax.imageio.ImageIO;
+import org.jackhuang.hmcl.JavaFXLauncher;
+import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorServer;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,9 +61,20 @@ class NomiServiceTest {
     /// In-process server with an ephemeral local port.
     private static @Nullable HttpServer server;
 
+    /// Signals that the creation response can be released.
+    private static volatile CountDownLatch release = new CountDownLatch(0);
+    /// Signals receipt of a creation request.
+    private static volatile CountDownLatch entered = new CountDownLatch(1);
+    /// Counts authenticated cancellation requests.
+    private static final AtomicInteger cancelled = new AtomicInteger();
+
+
+    /// Clipboard contents restored after rendering and command-copy verification.
+    private static final Map<DataFormat, Object> savedClipboard = new HashMap<>();
+
     /// Starts isolated routes before initializing the Nomi endpoint configuration.
     @BeforeAll
-    static void setup() throws IOException {
+    static void setup() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/ok", exchange -> {
             byte[] content = "{\"status\":\"COMPLETED\"}".getBytes(StandardCharsets.UTF_8);
@@ -60,14 +93,48 @@ class NomiServiceTest {
             exchange.sendResponseHeaders(302, -1);
             exchange.close();
         });
+        server.createContext("/api/v1/logins", exchange -> {
+            if ("DELETE".equals(exchange.getRequestMethod())) {
+                if ("Bearer private-poll".equals(exchange.getRequestHeaders().getFirst("Authorization")))
+                    cancelled.incrementAndGet();
+                exchange.sendResponseHeaders(204, -1);
+            } else {
+                entered.countDown();
+                try { release.await(5, TimeUnit.SECONDS); }
+                catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+                byte[] bytes = ("{\"request_id\":\"application\",\"poll_token\":\"private-poll\","
+                        + "\"code\":\"ABCD-EFGH-JKLM\",\"group_label\":\"测试群\",\"expires_at\":"
+                        + (Instant.now().getEpochSecond() + 300) + "}").getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(201, bytes.length);
+                exchange.getResponseBody().write(bytes);
+            }
+            exchange.close();
+        });
         server.start();
         System.setProperty("nomi.api.base", "http://127.0.0.1:" + server.getAddress().getPort());
+        JavaFXLauncher.start();
+        assertTrue(JavaFXLauncher.isStarted());
+        fx(() -> {
+            Platform.setImplicitExit(false);
+            var clipboard = Clipboard.getSystemClipboard();
+            for (DataFormat type : clipboard.getContentTypes()) {
+                @Nullable Object value = clipboard.getContent(type);
+                if (value != null) savedClipboard.put(type, value);
+            }
+            return true;
+        });
     }
 
     /// Releases the local server after all tests.
     @AfterAll
-    static void cleanup() {
+    static void cleanup() throws Exception {
         Objects.requireNonNull(server).stop(0);
+        fx(() -> {
+            var content = new ClipboardContent();
+            content.putAll(savedClipboard);
+            Clipboard.getSystemClipboard().setContent(content);
+            return true;
+        });
         System.clearProperty("nomi.api.base");
     }
 
@@ -103,5 +170,68 @@ class NomiServiceTest {
         assertEquals(account, renewed);
         account.setPortable(false);
         assertFalse(NomiService.permits(account));
+    }
+    /// Executes UI actions on the JavaFX application thread with a bounded wait.
+    private static <T> T fx(Callable<T> action) throws Exception {
+        var task = new FutureTask<>(action);
+        Platform.runLater(task);
+        return task.get(10, TimeUnit.SECONDS);
+    }
+
+    /// Waits for an asynchronous request to reach the fake backend.
+    private static void awaitCancellation(int expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (cancelled.get() < expected && System.nanoTime() < deadline) Thread.sleep(20);
+        assertEquals(expected, cancelled.get());
+    }
+
+    /// Closing during POST creation cancels the subsequently returned application.
+    @Test
+    void closeDuringCreation() throws Exception {
+        release = new CountDownLatch(1);
+        entered = new CountDownLatch(1);
+        int before = cancelled.get();
+        var pane = fx(() -> { var view = new NomiAccountPane(); view.onDialogShown(); return view; });
+        assertTrue(entered.await(10, TimeUnit.SECONDS));
+        fx(() -> { pane.onDialogClosed(); return true; });
+        release.countDown();
+        awaitCancellation(before + 1);
+    }
+
+    /// A code is copied as a complete command; only the close action remains visible.
+    @Test
+    void codePageAndCloseCancellation() throws Exception {
+        release = new CountDownLatch(0);
+        entered = new CountDownLatch(1);
+        int before = cancelled.get();
+        var pane = fx(() -> { var view = new NomiAccountPane(); view.onDialogShown(); return view; });
+        assertTrue(entered.await(10, TimeUnit.SECONDS));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!fx(() -> "登录 ABCD-EFGH-JKLM".equals(Clipboard.getSystemClipboard().getString()))
+                && System.nanoTime() < deadline) Thread.sleep(20);
+        fx(() -> {
+            assertEquals("登录 ABCD-EFGH-JKLM", Clipboard.getSystemClipboard().getString());
+            var root = new StackPane(pane);
+            root.setStyle("-fx-background-color: #292930;");
+            var scene = new Scene(root, 600, 360, Color.web("#292930"));
+            @Unmodifiable List<String> stylesheets = List.of("root.css", "blue.css", "brightness-dark.css", "font.css");
+            for (String css : stylesheets)
+                scene.getStylesheets().add(Objects.requireNonNull(getClass().getResource("/assets/css/" + css)).toExternalForm());
+            root.applyCss();
+            root.layout();
+            var buttons = root.lookupAll(".button");
+            assertEquals(1, buttons.size());
+            assertEquals("关闭", ((Button) buttons.iterator().next()).getText());
+            var snapshot = root.snapshot(null, null);
+            var output = new BufferedImage((int) snapshot.getWidth(), (int) snapshot.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < output.getHeight(); y++)
+                for (int x = 0; x < output.getWidth(); x++) output.setRGB(x, y, snapshot.getPixelReader().getArgb(x, y));
+            Path path = Path.of("build", "nomi-code-page.png");
+            Files.createDirectories(path.getParent());
+            ImageIO.write(output, "png", path.toFile());
+            pane.onDialogClosed();
+            return true;
+        });
+        awaitCancellation(before + 1);
     }
 }
