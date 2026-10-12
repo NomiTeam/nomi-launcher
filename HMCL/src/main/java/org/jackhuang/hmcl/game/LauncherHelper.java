@@ -752,46 +752,18 @@ public final class LauncherHelper {
         return future;
     }
 
+    /// Logs in only through Nomi and fails closed when external authentication is unavailable.
     private Task<AuthInfo> logIn(Account account) {
         return Task.composeAsync(() -> {
+            if (!org.jackhuang.hmcl.ui.account.NomiService.permits(account))
+                throw new AuthenticationException("请选择 Nomi 账号");
             try {
-                if (disableOfflineSkin && account instanceof OfflineAccount offlineAccount)
-                    return Task.completed(offlineAccount.logInWithoutSkin());
-                else
-                    return Task.completed(account.logIn());
-            } catch (CredentialExpiredException e) {
-                LOG.info("Credential has expired", e);
-
+                return Task.completed(account.logIn());
+            } catch (CredentialExpiredException exception) {
                 return Task.completed(DialogController.logIn(account));
-            } catch (AuthenticationException e) {
-                LOG.warning("Authentication failed, try skipping refresh", e);
-
-                CompletableFuture<Task<AuthInfo>> future = new CompletableFuture<>();
-                runInFX(() -> {
-                    JFXButton loginOfflineButton = new JFXButton(i18n("account.login.skip"));
-                    loginOfflineButton.setOnAction(event -> {
-                        try {
-                            future.complete(Task.completed(account.playOffline()));
-                        } catch (AuthenticationException e2) {
-                            future.completeExceptionally(e2);
-                        }
-                    });
-                    JFXButton retryButton = new JFXButton(i18n("account.login.retry"));
-                    retryButton.setOnAction(event -> {
-                        future.complete(logIn(account));
-                    });
-                    Controllers.dialog(new MessageDialogPane.Builder(i18n("account.failed.server_disconnected"), i18n("account.failed"), MessageType.ERROR)
-                            .addAction(loginOfflineButton)
-                            .addAction(retryButton)
-                            .addCancel(() ->
-                                    future.completeExceptionally(new CancellationException()))
-                            .build());
-                });
-                return Task.fromCompletableFuture(future).thenComposeAsync(task -> task);
             }
         });
     }
-
     private void checkExit() {
         switch (launcherVisibility) {
             case HIDE_AND_REOPEN:

@@ -77,3 +77,11 @@ language-subtag-registry
 !/.gemini/config.yaml
 .codex
 /.gradle-*/
+
+# Nomi local credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+desktop.ini

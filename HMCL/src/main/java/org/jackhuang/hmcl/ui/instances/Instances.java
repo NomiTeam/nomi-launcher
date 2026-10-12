@@ -383,36 +383,21 @@ public final class Instances {
                 launcherHelper.setQuickPlayOption(new QuickPlayOption.SinglePlayer(worldFolderName)));
     }
 
+    /// Ensures only a Nomi account can enter a game or generate a launch script.
     private static void ensureSelectedAccount(Consumer<Account> action) {
-        Account account = Accounts.getSelectedAccount();
-        if (SettingsManager.isNewlyCreated() && !AuthlibInjectorServers.getServers().isEmpty() &&
-                !(account instanceof AuthlibInjectorAccount && AuthlibInjectorServers.getServers().contains(((AuthlibInjectorAccount) account).getServer()))) {
-            CreateAccountPane dialog = new CreateAccountPane(AuthlibInjectorServers.getServers().iterator().next());
-            dialog.addEventHandler(DialogCloseEvent.CLOSE, e -> {
-                Account newAccount = Accounts.getSelectedAccount();
-                if (newAccount == null) {
-                    // user cancelled operation
-                } else {
-                    Platform.runLater(() -> action.accept(newAccount));
-                }
-            });
-            Controllers.dialog(dialog);
-        } else if (account == null) {
-            CreateAccountPane dialog = new CreateAccountPane();
-            dialog.addEventHandler(DialogCloseEvent.CLOSE, e -> {
-                Account newAccount = Accounts.getSelectedAccount();
-                if (newAccount == null) {
-                    // user cancelled operation
-                } else {
-                    Platform.runLater(() -> action.accept(newAccount));
-                }
-            });
-            Controllers.dialog(dialog);
-        } else {
+        @org.jetbrains.annotations.Nullable Account account = Accounts.getSelectedAccount();
+        if (org.jackhuang.hmcl.ui.account.NomiService.permits(account)) {
             action.accept(account);
+            return;
         }
+        var dialog = new org.jackhuang.hmcl.ui.account.NomiAccountPane();
+        dialog.addEventHandler(DialogCloseEvent.CLOSE, event -> {
+            @org.jetbrains.annotations.Nullable Account selected = Accounts.getSelectedAccount();
+            if (org.jackhuang.hmcl.ui.account.NomiService.permits(selected))
+                Platform.runLater(() -> action.accept(selected));
+        });
+        Controllers.dialog(dialog);
     }
-
     public static void modifyGlobalSettings(HMCLGameRepository repository) {
         Controllers.getSettingsPage().showGameSettings(repository);
         Controllers.navigate(Controllers.getSettingsPage());
