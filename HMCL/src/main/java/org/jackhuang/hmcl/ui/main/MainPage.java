@@ -86,7 +86,6 @@ import static org.jackhuang.hmcl.util.logging.Logger.LOG;
 
 /// Displays the launcher home controls for the currently selected game repository.
 public final class MainPage extends StackPane implements DecoratorPage {
-    private static final String ANNOUNCEMENT = "announcement";
 
     private final ReadOnlyObjectWrapper<State> state = new ReadOnlyObjectWrapper<>();
 
@@ -106,7 +105,6 @@ public final class MainPage extends StackPane implements DecoratorPage {
             BindingMapping.of(GameDirectoryManager.selectedRepositoryProperty())
                     .flatMap(HMCLGameRepository::snapshotProperty);
 
-    private TransitionPane announcementPane;
     private final StackPane updatePane;
     private final JFXButton menuButton;
 
@@ -130,52 +128,6 @@ public final class MainPage extends StackPane implements DecoratorPage {
         state.setValue(new State(null, titleNode, false, false, true));
 
         setPadding(new Insets(20));
-
-        if (Metadata.isNightly() || (Metadata.isDev() && !Objects.equals(Metadata.VERSION, state().getShownTips().get(ANNOUNCEMENT)))) {
-            String title;
-            String content;
-            if (Metadata.isNightly()) {
-                title = i18n("update.channel.nightly.title");
-                content = i18n("update.channel.nightly.hint");
-            } else {
-                title = i18n("update.channel.dev.title");
-                content = i18n("update.channel.dev.hint");
-            }
-
-            VBox announcementCard = new VBox();
-
-            BorderPane titleBar = new BorderPane();
-            titleBar.getStyleClass().add("title");
-            titleBar.setLeft(new Label(title));
-
-            JFXButton btnHide = new JFXButton();
-            btnHide.setOnAction(e -> {
-                announcementPane.setContent(new StackPane(), ContainerAnimations.FADE);
-                if (Metadata.isDev()) {
-                    state().getShownTips().put(ANNOUNCEMENT, Metadata.VERSION);
-                }
-            });
-            btnHide.getStyleClass().add("announcement-close-button");
-            btnHide.setGraphic(SVG.CLOSE.createIcon(20));
-            titleBar.setRight(btnHide);
-
-            TextFlow body = FXUtils.segmentToTextFlow(content, Controllers::onHyperlinkAction);
-            body.setLineSpacing(4);
-
-            announcementCard.getChildren().setAll(titleBar, body);
-            announcementCard.setSpacing(16);
-            announcementCard.getStyleClass().addAll("card", "announcement");
-
-            VBox announcementBox = new VBox(16);
-            announcementBox.setPadding(new Insets(15));
-            announcementBox.getChildren().add(announcementCard);
-
-            announcementPane = new TransitionPane();
-            announcementPane.setContent(announcementBox, ContainerAnimations.NONE);
-
-            StackPane.setMargin(announcementPane, new Insets(-15));
-            getChildren().add(announcementPane);
-        }
 
         updatePane = new StackPane();
         updatePane.setVisible(false);
