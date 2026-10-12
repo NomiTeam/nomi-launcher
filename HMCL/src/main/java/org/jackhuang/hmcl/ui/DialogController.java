@@ -18,13 +18,8 @@
 package org.jackhuang.hmcl.ui;
 
 import org.jackhuang.hmcl.auth.*;
-import org.jackhuang.hmcl.ui.account.ClassicAccountLoginDialog;
-import org.jackhuang.hmcl.ui.account.MicrosoftAccountLoginPane;
 
-import java.util.Optional;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.jackhuang.hmcl.ui.FXUtils.runInFX;
 
@@ -32,37 +27,11 @@ public final class DialogController {
     private DialogController() {
     }
 
-    /// Uses the Nomi group flow instead of an upstream password dialog for Nomi accounts.
+    /// Opens QQ verification instead of any upstream credential dialog.
     public static AuthInfo logIn(Account account) throws CancellationException, AuthenticationException, InterruptedException {
-        if (org.jackhuang.hmcl.ui.account.NomiService.permits(account)) {
-            runInFX(() -> Controllers.dialog(new org.jackhuang.hmcl.ui.account.NomiAccountPane()));
-            throw new CancellationException("请通过群验证码重新登录后再次操作");
-        }
-        if (account instanceof ClassicAccount) {
-            CountDownLatch latch = new CountDownLatch(1);
-            AtomicReference<AuthInfo> res = new AtomicReference<>(null);
-            runInFX(() -> {
-                ClassicAccountLoginDialog pane = new ClassicAccountLoginDialog((ClassicAccount) account, it -> {
-                    res.set(it);
-                    latch.countDown();
-                }, latch::countDown);
-                Controllers.dialog(pane);
-            });
-            latch.await();
-            return Optional.ofNullable(res.get()).orElseThrow(CancellationException::new);
-        } else if (account instanceof OAuthAccount) {
-            CountDownLatch latch = new CountDownLatch(1);
-            AtomicReference<AuthInfo> res = new AtomicReference<>(null);
-            runInFX(() -> {
-                MicrosoftAccountLoginPane pane = new MicrosoftAccountLoginPane(account, it -> {
-                    res.set(it);
-                    latch.countDown();
-                }, latch::countDown, false);
-                Controllers.dialog(pane);
-            });
-            latch.await();
-            return Optional.ofNullable(res.get()).orElseThrow(CancellationException::new);
-        }
-        return account.logIn();
+        if (!org.jackhuang.hmcl.ui.account.NomiService.permits(account))
+            throw new AuthenticationException("当前启动器只支持 Nomi 账号");
+        runInFX(() -> Controllers.dialog(new org.jackhuang.hmcl.ui.account.NomiAccountPane()));
+        throw new CancellationException("请通过群验证码重新登录后再次操作");
     }
 }

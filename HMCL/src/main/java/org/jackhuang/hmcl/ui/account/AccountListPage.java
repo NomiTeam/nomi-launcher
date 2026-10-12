@@ -79,7 +79,7 @@ public final class AccountListPage extends DecoratorAnimatedPage implements Deco
     private final ObjectProperty<Account> selectedAccount;
 
     public AccountListPage() {
-        items = MappedObservableList.create(accounts, AccountListItem::new);
+        items = MappedObservableList.create(accounts.filtered(NomiService::permits), AccountListItem::new);
         selectedAccount = createSelectedItemPropertyFor(items, Account.class);
     }
 
