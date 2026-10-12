@@ -17,6 +17,8 @@
  */
 package org.jackhuang.hmcl.setting;
 
+import org.jackhuang.hmcl.Metadata;
+
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
@@ -709,7 +711,8 @@ public sealed abstract class GameSettings extends ObservableSetting {
 
     /// The quick play target type.
     @SerializedName(PROPERTY_QUICK_PLAY)
-    private final InheritableProperty<QuickPlayType> quickPlay = newInheritableProperty(PROPERTY_QUICK_PLAY, QuickPlayType.MULTIPLAYER);
+    private final InheritableProperty<QuickPlayType> quickPlay = newInheritableProperty(PROPERTY_QUICK_PLAY,
+            StringUtils.isBlank(Metadata.DEFAULT_SERVER) ? QuickPlayType.NONE : QuickPlayType.MULTIPLAYER);
 
     /// Returns the quick play target type property.
     public InheritableProperty<QuickPlayType> quickPlayProperty() {
@@ -721,7 +724,7 @@ public sealed abstract class GameSettings extends ObservableSetting {
 
     /// The server address for multiplayer quick play.
     @SerializedName(PROPERTY_QUICK_PLAY_MULTIPLAYER)
-    private final InheritableProperty<String> quickPlayMultiplayer = newInheritableProperty(PROPERTY_QUICK_PLAY_MULTIPLAYER, "play.missdrop.cn");
+    private final InheritableProperty<String> quickPlayMultiplayer = newInheritableProperty(PROPERTY_QUICK_PLAY_MULTIPLAYER, Metadata.DEFAULT_SERVER);
 
     /// Returns the multiplayer quick play target property.
     public InheritableProperty<String> quickPlayMultiplayerProperty() {
@@ -1025,10 +1028,11 @@ public sealed abstract class GameSettings extends ObservableSetting {
         /// Returns the explicit quick play target, defaulting unset instances to the Nomi server.
         public @Nullable QuickPlayOption getQuickPlayOption() {
             return switch (getInheritable(GameSettings::quickPlayProperty)) {
-                case NONE -> new QuickPlayOption.MultiPlayer("play.missdrop.cn");
+                case NONE -> StringUtils.isBlank(Metadata.DEFAULT_SERVER) ? null : new QuickPlayOption.MultiPlayer(Metadata.DEFAULT_SERVER);
                 case MULTIPLAYER -> {
                     String server = getInheritable(GameSettings::quickPlayMultiplayerProperty);
-                    yield new QuickPlayOption.MultiPlayer(StringUtils.isBlank(server) ? "play.missdrop.cn" : server);
+                    String target = StringUtils.isBlank(server) ? Metadata.DEFAULT_SERVER : server;
+                    yield StringUtils.isBlank(target) ? null : new QuickPlayOption.MultiPlayer(target);
                 }
                 case SINGLEPLAYER -> {
                     String world = getInheritable(GameSettings::quickPlaySingleplayerProperty);

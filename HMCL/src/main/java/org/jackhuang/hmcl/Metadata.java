@@ -37,6 +37,9 @@ public final class Metadata {
     public static final String NAME = "Nomi Launcher";
     /// Product name displayed in window titles.
     public static final String FULL_NAME = NAME;
+    /// Optional multiplayer destination supplied by build configuration or a runtime override.
+    public static final String DEFAULT_SERVER = System.getProperty("nomi.defaultServer",
+            JarUtils.getAttribute("nomi.default.server", ""));
     public static final String VERSION = System.getProperty("hmcl.version.override", JarUtils.getAttribute("hmcl.version", "@develop@"));
 
     /// Explicit Application User Model ID used for Windows taskbar grouping and pinning.

@@ -24,6 +24,12 @@ plugins {
 }
 
 val projectConfig = PropertiesUtils.load(rootProject.file("config/project.properties").toPath())
+val nomiDefaultServer = providers.gradleProperty("nomiDefaultServer")
+    .orElse(providers.environmentVariable("NOMI_DEFAULT_SERVER")).getOrElse("")
+
+tasks.test {
+    systemProperty("nomi.defaultServer", nomiDefaultServer)
+}
 
 val isOfficial = JenkinsUtils.IS_ON_CI || GitHubActionUtils.IS_ON_OFFICIAL_REPO
 
@@ -156,6 +162,7 @@ tasks.compileJava {
 
 val hmclProperties = buildList {
     add("hmcl.version" to project.version.toString())
+    add("nomi.default.server" to nomiDefaultServer)
     add("hmcl.add-opens" to addOpens.joinToString(" "))
     System.getenv("GITHUB_SHA")?.let {
         add("hmcl.version.hash" to it)

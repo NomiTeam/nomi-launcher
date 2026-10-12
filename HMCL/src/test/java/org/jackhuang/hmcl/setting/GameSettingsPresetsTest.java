@@ -40,9 +40,9 @@ public final class GameSettingsPresetsTest {
     public void defaultsExistingAndNewInstancesToNomiServer() {
         var preset = new GameSettings.Preset(GameSettingsPresetID.generate());
         var effective = GameSettings.resolve(preset, new GameSettings.Instance());
-        assertEquals(new org.jackhuang.hmcl.game.QuickPlayOption.MultiPlayer("play.missdrop.cn"), effective.getQuickPlayOption());
+        assertEquals((org.jackhuang.hmcl.Metadata.DEFAULT_SERVER.isBlank() ? null : new org.jackhuang.hmcl.game.QuickPlayOption.MultiPlayer(org.jackhuang.hmcl.Metadata.DEFAULT_SERVER)), effective.getQuickPlayOption());
         preset.quickPlayProperty().setValue(QuickPlayType.NONE);
-        assertEquals(new org.jackhuang.hmcl.game.QuickPlayOption.MultiPlayer("play.missdrop.cn"), effective.getQuickPlayOption());
+        assertEquals((org.jackhuang.hmcl.Metadata.DEFAULT_SERVER.isBlank() ? null : new org.jackhuang.hmcl.game.QuickPlayOption.MultiPlayer(org.jackhuang.hmcl.Metadata.DEFAULT_SERVER)), effective.getQuickPlayOption());
         preset.quickPlayProperty().setValue(QuickPlayType.MULTIPLAYER);
         preset.quickPlayMultiplayerProperty().setValue("other.example:25566");
         assertEquals(new org.jackhuang.hmcl.game.QuickPlayOption.MultiPlayer("other.example:25566"), effective.getQuickPlayOption());

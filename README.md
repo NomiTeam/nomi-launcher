@@ -18,7 +18,7 @@
 使用 JDK 17 或更高版本：
 
 ```text
-gradlew.bat :HMCL:test --tests *NomiServiceTest :HMCL:shadowJar
+gradlew.bat :HMCL:test --tests *NomiServiceTest :HMCL:shadowJar -PnomiDefaultServer=play.missdrop.cn
 java -Dnomi.api.base=http://127.0.0.1:8000 -jar HMCL/build/libs/HMCL-3.17.SNAPSHOT.jar
 ```
 
@@ -33,3 +33,5 @@ Linux 使用 `./gradlew`。以 `HMCL/build/libs/` 的实际文件名为准。默
 ## 许可证
 
 沿用 HMCL 的 GPLv3 及附加条款，见 [LICENSE](LICENSE)。发布修改版需保留版权声明、提供对应源码，并使用可区分的名称或版本；本项目名称为 Nomi Launcher。
+
+自动进服地址由构建参数 `-PnomiDefaultServer=play.missdrop.cn` 或环境变量 `NOMI_DEFAULT_SERVER` 提供，源码中不固定服务器地址。不提供该配置时不默认进服；运行时可用 `-Dnomi.defaultServer=其他地址` 覆盖，传空值可关闭默认进服。
