@@ -18,6 +18,8 @@
 package org.jackhuang.hmcl.ui.account;
 
 import com.sun.net.httpserver.HttpServer;
+import com.google.gson.JsonParser;
+import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorServer;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
@@ -82,5 +84,21 @@ class NomiServiceTest {
     void rejectsRedirectAndMissingAccount() {
         assertThrows(IOException.class, () -> NomiService.request("GET", "/redirect", null, "private"));
         assertFalse(NomiService.permits(null));
+    }
+
+    /// A QR-authenticated game session imports without password authentication and preserves local record identity.
+    @Test
+    void importsVerifiedSessionWithoutPassword() {
+        var session = JsonParser.parseString("""
+                {"login_name":"Alice","management_token":"management",
+                 "game":{"accessToken":"game","clientToken":"client",
+                         "selectedProfile":{"id":"12345678901234567890123456789012","name":"Alice"}}}
+                """).getAsJsonObject();
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var account = NomiService.accountFromSession(server, session);
+        assertTrue(NomiService.permits(account));
+        assertEquals("Alice", account.getProfileName());
+        var renewed = NomiService.accountFromSession(server, session, account.getAccountID());
+        assertEquals(account, renewed);
     }
 }

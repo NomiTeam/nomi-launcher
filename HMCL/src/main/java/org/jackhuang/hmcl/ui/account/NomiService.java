@@ -20,6 +20,9 @@ package org.jackhuang.hmcl.ui.account;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.jackhuang.hmcl.auth.Account;
+import org.jackhuang.hmcl.auth.AccountID;
+import org.jackhuang.hmcl.setting.Accounts;
+import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorServer;
 import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorAccount;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
@@ -51,6 +54,27 @@ public final class NomiService {
     public static boolean permits(@Nullable Account account) {
         return account instanceof AuthlibInjectorAccount injector
                 && injector.getServer().getUrl().replaceAll("/+$", "").equals(AUTH.replaceAll("/+$", ""));
+    }
+
+    /// Imports a verified QQ session into HMCL without using its password authentication API.
+    public static Account accountFromSession(AuthlibInjectorServer server, JsonObject session) {
+        return accountFromSession(server, session, null);
+    }
+
+    /// Preserves an existing launcher record ID when replacing its QQ-authenticated session.
+    public static Account accountFromSession(AuthlibInjectorServer server, JsonObject session, @Nullable AccountID existingID) {
+        var game = session.getAsJsonObject("game");
+        var selected = game.getAsJsonObject("selectedProfile");
+        var metadata = new JsonObject();
+        metadata.addProperty("accountID", (existingID == null ? AccountID.generate() : existingID).toString());
+        metadata.addProperty("profileID", selected.get("id").getAsString());
+        metadata.addProperty("loginName", session.get("login_name").getAsString());
+        metadata.addProperty("serverBaseURL", server.getUrl());
+        var privateData = new JsonObject();
+        privateData.addProperty("accessToken", game.get("accessToken").getAsString());
+        privateData.addProperty("clientToken", game.get("clientToken").getAsString());
+        privateData.addProperty("profileName", selected.get("name").getAsString());
+        return Accounts.getAccountFactoryByAuthlibInjectorServer(server).fromStorage(metadata, privateData);
     }
 
     /// Sends JSON, returning an empty object for successful no-content responses.

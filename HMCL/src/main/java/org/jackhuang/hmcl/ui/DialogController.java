@@ -32,7 +32,12 @@ public final class DialogController {
     private DialogController() {
     }
 
+    /// Uses the Nomi group flow instead of an upstream password dialog for Nomi accounts.
     public static AuthInfo logIn(Account account) throws CancellationException, AuthenticationException, InterruptedException {
+        if (org.jackhuang.hmcl.ui.account.NomiService.permits(account)) {
+            runInFX(() -> Controllers.dialog(new org.jackhuang.hmcl.ui.account.NomiAccountPane()));
+            throw new CancellationException("请通过群验证码重新登录后再次操作");
+        }
         if (account instanceof ClassicAccount) {
             CountDownLatch latch = new CountDownLatch(1);
             AtomicReference<AuthInfo> res = new AtomicReference<>(null);

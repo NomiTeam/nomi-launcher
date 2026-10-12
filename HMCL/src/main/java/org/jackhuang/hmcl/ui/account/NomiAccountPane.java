@@ -23,12 +23,14 @@ import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.scene.control.*;
-import javafx.scene.layout.VBox;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.util.Duration;
 import org.jackhuang.hmcl.auth.Account;
+import org.jackhuang.hmcl.auth.AccountID;
+import org.jackhuang.hmcl.auth.ClassicAccount;
 import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorServer;
 import org.jackhuang.hmcl.setting.Accounts;
 import org.jackhuang.hmcl.ui.construct.DialogAware;
@@ -41,55 +43,45 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
-/// Nomi login, single-code registration and account management dialog.
+/// Passwordless Nomi registration, QQ login and account management.
 @NotNullByDefault
 public final class NomiAccountPane extends JFXDialogLayout implements DialogAware {
-    /// Fixed login name, which does not change with the game name.
+    /// Stable login name, independent of the changeable game name.
     private final TextField username = new TextField();
-    /// Current password, retained only in the form while the dialog is open.
-    private final PasswordField password = new PasswordField();
-    /// New password or repeated registration password.
-    private final PasswordField repeated = new PasswordField();
-    /// Business and progress messages.
+    /// User-visible progress and errors.
     private final Label status = new Label();
-    /// Operations and registration progress.
+    /// Scrollable form content.
     private final VBox body = new VBox(10);
-    /// Polling schedule; created only for a live registration or recovery.
+    /// Serial, cancellable status polling schedule.
     private final Timeline polling = new Timeline();
-    /// Management bearer token, never persisted on disk.
+    /// Short-lived management token, never persisted.
     private @Nullable String managementToken;
-    /// Current application private polling credential.
+    /// Private application status/exchange credential, never sent to the group.
     private @Nullable String pollToken;
     /// Current application ID.
     private @Nullable String requestId;
-    /// Whether current polling is a recovery rather than a registration.
-    private boolean recovering;
-    /// Prevents concurrent form operations.
+    /// Distinguishes initial registration from existing-account login.
+    private boolean registering;
+    /// Prevents overlapping network operations.
     private boolean busy;
-    /// Prevents asynchronous callbacks from updating a closed dialog.
+    /// Ignores callbacks after dialog closure.
     private boolean closed;
 
-    /// Creates the dialog with Nomi-specific actions and no other authentication methods.
+    /// Creates separate existing-login and registration choices with no password field.
     public NomiAccountPane() {
         setHeading(new Label("Nomi 账号"));
-        username.setPromptText("固定登录名（首次与游戏名相同）");
-        password.setPromptText("密码，至少 10 位");
-        repeated.setPromptText("注册时重复密码；找回时填写新密码");
+        username.setPromptText("注册时填写用户名；登录时填写固定登录名");
         status.setWrapText(true);
-        var login = button("登录", this::login);
-        var register = button("创建账号", this::register);
-        var recover = button("找回密码", this::recover);
-        body.getChildren().setAll(username, password, repeated, login, register, recover, status);
+        resetForm();
         var scroll = new ScrollPane(body);
         scroll.setFitToWidth(true);
         scroll.setMaxHeight(520);
         setBody(scroll);
-        var close = button("关闭", () -> fireEvent(new DialogCloseEvent()));
-        setActions(close);
+        setActions(button("关闭", () -> fireEvent(new DialogCloseEvent())));
         setPrefWidth(560);
     }
 
-    /// Creates a standard button running on the JavaFX thread.
+    /// Creates a full-width action button.
     private Button button(String text, Runnable action) {
         var button = new Button(text);
         button.setMaxWidth(Double.MAX_VALUE);
@@ -97,7 +89,7 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
         return button;
     }
 
-    /// Performs network work off-thread, serializes actions, and ignores closed-dialog callbacks.
+    /// Runs requests off the UI thread and releases the form on success or failure.
     private <T> void run(Callable<T> action, Consumer<T> success) {
         if (busy || closed) return;
         busy = true;
@@ -112,32 +104,90 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
             if (failure != null) {
                 @Nullable Throwable cause = failure.getCause();
                 status.setText(cause == null ? "请求失败" : cause.getMessage());
+                if (requestId != null && polling.getStatus() != Timeline.Status.RUNNING) resetForm();
             } else success.accept(result);
         }));
     }
 
-    /// Builds a JSON object from text key/value pairs.
+    /// Builds JSON text properties without exposing tokens in URLs.
     private JsonObject json(String... pairs) {
         var json = new JsonObject();
         for (int i = 0; i < pairs.length; i += 2) json.addProperty(pairs[i], pairs[i + 1]);
         return json;
     }
 
-    /// Logs in through both the management API and HMCL's external-account factory.
-    private void login() {
+    /// Starts one single-code application for a new or existing account.
+    private void startRequest(boolean registration) {
         String name = username.getText().trim();
-        String pass = password.getText();
+        String path = registration ? "/api/v1/registrations" : "/api/v1/logins";
+        var payload = json(registration ? "name" : "username", name);
+        run(() -> NomiService.request("POST", path, payload, null), result -> startPolling(result, registration));
+    }
+
+    /// Displays the group challenge and polls privately until it is validated.
+    private void startPolling(JsonObject result, boolean registration) {
+        requestId = result.get("request_id").getAsString();
+        pollToken = result.get("poll_token").getAsString();
+        registering = registration;
+        String group = result.get("group_label").getAsString();
+        var command = new TextField((registration ? "注册 " : "登录 ") + result.get("code").getAsString());
+        command.setEditable(false);
+        body.getChildren().setAll(new Label("在" + group + "发送下方命令；机器人未响应时可艾特它。"),
+                command, status, button("取消申请", this::cancel));
+        status.setText(registration ? "等待群验证注册，验证码只使用一次。" : "请使用该账号绑定的 QQ 在群内验证登录。");
+        long expires = result.get("expires_at").getAsLong();
+        polling.getKeyFrames().setAll(new KeyFrame(Duration.seconds(2), event -> {
+            if (java.time.Instant.now().getEpochSecond() >= expires) {
+                polling.stop();
+                resetForm();
+                status.setText("验证码已过期，请重新申请。");
+            } else poll();
+        }));
+        polling.setCycleCount(Timeline.INDEFINITE);
+        polling.play();
+    }
+
+    /// Resolves the private application path from its operation kind.
+    private String applicationPath() {
+        return "/api/v1/" + (registering ? "registrations/" : "logins/") + requestId;
+    }
+
+    /// Polls without overlapping requests; terminal verification proceeds to one-time session exchange.
+    private void poll() {
+        if (requestId == null || pollToken == null) return;
+        String path = applicationPath();
+        String token = pollToken;
+        run(() -> NomiService.request("GET", path, null, token), result -> {
+            String state = result.get("status").getAsString();
+            if ("PENDING".equals(state)) return;
+            polling.stop();
+            if (registering && "COMPLETED".equals(state) || !registering && "VERIFIED".equals(state))
+                exchange();
+            else {
+                resetForm();
+                status.setText("申请状态：" + state + "，请重新发起验证。");
+            }
+        });
+    }
+
+    /// Claims tokens once, then constructs HMCL's external account directly from the returned session.
+    private void exchange() {
+        if (requestId == null || pollToken == null) return;
+        String path = applicationPath() + "/session";
+        String token = pollToken;
+        @Nullable AccountID existingID = savedAccountID();
         run(() -> {
-            var session = NomiService.request("POST", "/api/v1/sessions", json("username", name, "password", pass), null);
+            // Resolve the server before consuming the grant, so a metadata failure leaves it claimable.
             var server = AuthlibInjectorServer.locateServer(NomiService.AUTH);
             if (!server.getUrl().replaceAll("/+$", "").equals(NomiService.AUTH.replaceAll("/+$", "")))
                 throw new java.io.IOException("认证地址与 Nomi 配置不一致");
-            var account = Accounts.getAccountFactoryByAuthlibInjectorServer(server)
-                    .create(new CreateAccountPane.DialogCharacterSelector(), name, pass, null, null);
-            return new LoginResult(account, session.get("access_token").getAsString());
+            var result = NomiService.request("POST", path, null, token);
+            return new LoginResult(NomiService.accountFromSession(server, result, existingID),
+                    result.get("management_token").getAsString());
         }, result -> {
             if (Accounts.isAccountFilesReadOnly(result.account())) {
-                status.setText("账号文件只读，请先在设置中处理存储权限。");
+                resetForm();
+                status.setText("账号文件只读，请处理存储权限后重新验证登录。");
                 return;
             }
             int index = Accounts.getAccounts().indexOf(result.account());
@@ -145,120 +195,52 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
             else Accounts.getAccounts().add(result.account());
             Accounts.setSelectedAccount(result.account());
             managementToken = result.token();
-            password.clear();
-            repeated.clear();
+            requestId = null;
+            pollToken = null;
             showManagement();
         });
     }
 
-    /// Values returned by a completed login operation.
+    /// Reads existing account IDs on the FX thread so repeat login replaces rather than duplicates a record.
+    private @Nullable AccountID savedAccountID() {
+        for (Account account : Accounts.getAccounts()) {
+            if (NomiService.permits(account) && account instanceof ClassicAccount classic
+                    && classic.getLoginName().equalsIgnoreCase(username.getText().trim()))
+                return account.getAccountID();
+        }
+        return null;
+    }
+
+    /// A logged-in external account and its independent management token.
     @NotNullByDefault
     private record LoginResult(Account account, String token) { }
 
-    /// Begins one-time group registration after local password comparison.
-    private void register() {
-        if (!password.getText().equals(repeated.getText())) {
-            status.setText("两次密码不一致");
-            return;
-        }
-        String name = username.getText().trim();
-        String pass = password.getText();
-        run(() -> NomiService.request("POST", "/api/v1/registrations", json("name", name, "password", pass), null),
-                result -> startPolling(result, false));
-    }
-
-    /// Starts recovery; only the account's bound group member may verify it.
-    private void recover() {
-        String name = username.getText().trim();
-        run(() -> NomiService.request("POST", "/api/v1/recoveries", json("username", name), null),
-                result -> startPolling(result, true));
-    }
-
-    /// Displays the public challenge and starts non-overlapping private status requests.
-    private void startPolling(JsonObject result, boolean recovery) {
-        requestId = result.get("request_id").getAsString();
-        pollToken = result.get("poll_token").getAsString();
-        recovering = recovery;
-        String group = result.has("group_label") ? result.get("group_label").getAsString() : "服务器指定群";
-        var command = new TextField("@机器人 " + (recovery ? "找回 " : "注册 ") + result.get("code").getAsString());
-        command.setEditable(false);
-        body.getChildren().setAll(new Label("请在" + group + "发送下方命令（可选中复制，5 分钟内有效）"), command, status);
-        if (recovery) {
-            body.getChildren().add(repeated);
-            body.getChildren().add(button("设置新密码", this::completeRecovery));
-        } else body.getChildren().add(button("取消申请", this::cancel));
-        status.setText("等待群验证，验证码只使用一次。");
-        polling.getKeyFrames().setAll(new KeyFrame(Duration.seconds(2), event -> poll()));
-        polling.setCycleCount(Timeline.INDEFINITE);
-        polling.play();
-    }
-
-    /// Queries private application status; a registration result can then log in automatically.
-    private void poll() {
-        if (requestId == null || pollToken == null) return;
-        String path = "/api/v1/" + (recovering ? "recoveries/" : "registrations/") + requestId;
-        String token = pollToken;
-        run(() -> NomiService.request("GET", path, null, token), result -> {
-            String state = result.get("status").getAsString();
-            if (!"PENDING".equals(state)) {
-                polling.stop();
-                status.setText("状态：" + state);
-                if ("COMPLETED".equals(state) && !recovering) {
-                    resetForm();
-                    login();
-                }
-                else if (!"VERIFIED".equals(state)) resetForm();
-            }
-        });
-    }
-
-    /// Cancels a pending registration atomically before restoring the initial form.
+    /// Cancels an unused application before restoring both entry choices.
     private void cancel() {
         if (requestId == null || pollToken == null) return;
-        String path = "/api/v1/registrations/" + requestId;
+        String path = applicationPath();
         String token = pollToken;
         run(() -> NomiService.request("DELETE", path, null, token), result -> {
             polling.stop();
             resetForm();
-            password.clear();
-            repeated.clear();
             status.setText("申请已取消");
         });
     }
 
-    /// Consumes a verified recovery authorization and requires a new login afterward.
-    private void completeRecovery() {
-        if (requestId == null || pollToken == null) return;
-        String path = "/api/v1/recoveries/" + requestId + "/complete";
-        String token = pollToken;
-        String pass = repeated.getText();
-        run(() -> NomiService.request("POST", path, json("password", pass), token), result -> {
-            polling.stop();
-            password.clear();
-            repeated.clear();
-            resetForm();
-            status.setText("密码已重置，请重新登录。");
-        });
-    }
-
-    /// Restores login fields without losing the displayed outcome.
+    /// Restores separate login and registration buttons without storing private application credentials.
     private void resetForm() {
         requestId = null;
         pollToken = null;
-        body.getChildren().setAll(username, password, repeated, button("登录", this::login),
-                button("创建账号", this::register), button("找回密码", this::recover), status);
+        body.getChildren().setAll(username, button("登录已有账号", () -> startRequest(false)),
+                button("创建新账号", () -> startRequest(true)), status);
     }
 
-    /// Shows UUID-safe game-name and PNG-skin actions for a live management session.
+    /// Manages game-name and skin changes through the QQ-authenticated session.
     private void showManagement() {
         String token = managementToken == null ? "" : managementToken;
         run(() -> NomiService.request("GET", "/api/v1/me", null, token), result -> {
             var profile = result.getAsJsonObject("profile");
             var gameName = new TextField(profile.get("name").getAsString());
-            var confirmPassword = new PasswordField();
-            confirmPassword.setPromptText("改名或改密码时输入当前密码");
-            var newPassword = new PasswordField();
-            newPassword.setPromptText("新密码，至少 10 位");
             var model = new ComboBox<String>();
             model.getItems().setAll("default", "slim");
             model.setValue(profile.get("skin_model").getAsString());
@@ -268,49 +250,42 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
             preview.setSmooth(false);
             if (!profile.get("skin_hash").isJsonNull())
                 preview.setImage(new Image(NomiService.BASE + "/textures/" + profile.get("skin_hash").getAsString(), true));
-            body.getChildren().setAll(new Label("登录名：" + result.get("login_name").getAsString()),
-                    new Label("UUID：" + profile.get("uuid").getAsString()), gameName, confirmPassword,
+            body.getChildren().setAll(new Label("固定登录名：" + result.get("login_name").getAsString()),
+                    new Label("UUID：" + profile.get("uuid").getAsString()), gameName,
                     button("修改游戏用户名", () -> {
-                        var payload = json("name", gameName.getText().trim(), "password", confirmPassword.getText());
-                        run(() -> NomiService.request("PATCH", "/api/v1/me/profile/name", payload, token), updated -> {
-                            confirmPassword.clear();
-                            status.setText("改名成功，请关闭游戏并重新登录，UUID 保持不变。");
-                        });
-                    }), new Label("当前皮肤纹理"), preview, model, button("上传或更换皮肤", () -> {
+                        var payload = json("name", gameName.getText().trim());
+                        run(() -> NomiService.request("PATCH", "/api/v1/me/profile/name", payload, token), updated ->
+                                status.setText("改名成功，请关闭游戏并重新登录；UUID 保持不变。"));
+                    }), new Label("当前皮肤纹理"), preview, model,
+                    button("上传或更换皮肤", () -> {
                         var chooser = new FileChooser();
                         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PNG 皮肤", "*.png"));
                         @Nullable File file = chooser.showOpenDialog(getScene().getWindow());
                         if (file != null) {
-                            String selectedModel = model.getValue();
+                            String selectedModel = java.util.Objects.requireNonNullElse(model.getValue(), "default");
                             run(() -> NomiService.upload(file.toPath(), selectedModel, token), updated -> {
                                 preview.setImage(new Image(updated.get("url").getAsString(), true));
                                 status.setText("皮肤已更新，请重新进服。");
                             });
                         }
-                    }), button("恢复默认皮肤", () -> run(() -> NomiService.request("DELETE", "/api/v1/me/profile/skin", null, token),
-                            updated -> {
+                    }), button("恢复默认皮肤", () ->
+                            run(() -> NomiService.request("DELETE", "/api/v1/me/profile/skin", null, token), updated -> {
                                 preview.setImage(null);
                                 status.setText("已恢复默认皮肤，请重新进服。");
-                            })), newPassword,
-                    button("修改密码", () -> {
-                        var payload = json("old_password", confirmPassword.getText(), "new_password", newPassword.getText());
-                        run(() -> NomiService.request("PUT", "/api/v1/me/password", payload, token), updated -> {
-                            managementToken = null;
-                            resetForm();
-                            status.setText("密码已修改，旧会话已撤销，请重新登录。");
-                        });
+                            })), button("重新通过群验证码登录", () -> {
+                        managementToken = null;
+                        resetForm();
+                        status.setText("输入固定登录名后点击登录。");
                     }), status);
-            status.setText("登录成功");
+            status.setText("群验证登录成功");
         });
     }
 
-    /// Stops private polling and clears local secrets when HMCL closes the dialog.
+    /// Stops polling and clears private in-memory credentials.
     @Override
     public void onDialogClosed() {
         closed = true;
         polling.stop();
-        password.clear();
-        repeated.clear();
         managementToken = null;
         pollToken = null;
     }

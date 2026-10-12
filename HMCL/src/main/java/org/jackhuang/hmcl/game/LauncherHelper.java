@@ -760,7 +760,7 @@ public final class LauncherHelper {
             try {
                 return Task.completed(account.logIn());
             } catch (CredentialExpiredException exception) {
-                return Task.completed(DialogController.logIn(account));
+                throw new AuthenticationException("会话已过期，请在 Nomi 账号页通过群验证码重新登录", exception);
             }
         });
     }
