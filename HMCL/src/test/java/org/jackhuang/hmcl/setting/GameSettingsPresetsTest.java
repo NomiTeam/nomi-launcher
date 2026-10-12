@@ -21,6 +21,7 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.jackhuang.hmcl.util.gson.JsonUtils;
+import org.jackhuang.hmcl.game.QuickPlayType;
 import org.jackhuang.hmcl.util.i18n.LocalizedText;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,22 @@ import static org.junit.jupiter.api.Assertions.*;
 /// Tests for detached game settings presets.
 @NotNullByDefault
 public final class GameSettingsPresetsTest {
+    /// Existing unset instances join Nomi, while explicit quick play destinations remain effective.
+    @Test
+    public void defaultsExistingAndNewInstancesToNomiServer() {
+        var preset = new GameSettings.Preset(GameSettingsPresetID.generate());
+        var effective = GameSettings.resolve(preset, new GameSettings.Instance());
+        assertEquals(new org.jackhuang.hmcl.game.QuickPlayOption.MultiPlayer("play.missdrop.cn"), effective.getQuickPlayOption());
+        preset.quickPlayProperty().setValue(QuickPlayType.NONE);
+        assertEquals(new org.jackhuang.hmcl.game.QuickPlayOption.MultiPlayer("play.missdrop.cn"), effective.getQuickPlayOption());
+        preset.quickPlayProperty().setValue(QuickPlayType.MULTIPLAYER);
+        preset.quickPlayMultiplayerProperty().setValue("other.example:25566");
+        assertEquals(new org.jackhuang.hmcl.game.QuickPlayOption.MultiPlayer("other.example:25566"), effective.getQuickPlayOption());
+        preset.quickPlayProperty().setValue(QuickPlayType.SINGLEPLAYER);
+        preset.quickPlaySingleplayerProperty().setValue("MyWorld");
+        assertEquals(new org.jackhuang.hmcl.game.QuickPlayOption.SinglePlayer("MyWorld"), effective.getQuickPlayOption());
+    }
+
     /// Tests that the default preset selection belongs to LauncherSettings.
     @Test
     public void storesDefaultGameSettingsPresetInConfig() {

@@ -709,7 +709,7 @@ public sealed abstract class GameSettings extends ObservableSetting {
 
     /// The quick play target type.
     @SerializedName(PROPERTY_QUICK_PLAY)
-    private final InheritableProperty<QuickPlayType> quickPlay = newInheritableProperty(PROPERTY_QUICK_PLAY, QuickPlayType.NONE);
+    private final InheritableProperty<QuickPlayType> quickPlay = newInheritableProperty(PROPERTY_QUICK_PLAY, QuickPlayType.MULTIPLAYER);
 
     /// Returns the quick play target type property.
     public InheritableProperty<QuickPlayType> quickPlayProperty() {
@@ -721,7 +721,7 @@ public sealed abstract class GameSettings extends ObservableSetting {
 
     /// The server address for multiplayer quick play.
     @SerializedName(PROPERTY_QUICK_PLAY_MULTIPLAYER)
-    private final InheritableProperty<String> quickPlayMultiplayer = newInheritableProperty(PROPERTY_QUICK_PLAY_MULTIPLAYER, "");
+    private final InheritableProperty<String> quickPlayMultiplayer = newInheritableProperty(PROPERTY_QUICK_PLAY_MULTIPLAYER, "play.missdrop.cn");
 
     /// Returns the multiplayer quick play target property.
     public InheritableProperty<String> quickPlayMultiplayerProperty() {
@@ -1022,13 +1022,13 @@ public sealed abstract class GameSettings extends ObservableSetting {
             };
         }
 
-        /// Returns the effective quick play option.
+        /// Returns the explicit quick play target, defaulting unset instances to the Nomi server.
         public @Nullable QuickPlayOption getQuickPlayOption() {
             return switch (getInheritable(GameSettings::quickPlayProperty)) {
-                case NONE -> null;
+                case NONE -> new QuickPlayOption.MultiPlayer("play.missdrop.cn");
                 case MULTIPLAYER -> {
                     String server = getInheritable(GameSettings::quickPlayMultiplayerProperty);
-                    yield StringUtils.isBlank(server) ? null : new QuickPlayOption.MultiPlayer(server);
+                    yield new QuickPlayOption.MultiPlayer(StringUtils.isBlank(server) ? "play.missdrop.cn" : server);
                 }
                 case SINGLEPLAYER -> {
                     String world = getInheritable(GameSettings::quickPlaySingleplayerProperty);
