@@ -41,7 +41,7 @@ import java.time.Duration;
 @NotNullByDefault
 public final class NomiService {
     /// Public base URL; supply the deployment address through -Dnomi.api.base at release time.
-    public static final String BASE = System.getProperty("nomi.api.base", "http://127.0.0.1:8000").replaceAll("/+$", "");
+    public static final String BASE = System.getProperty("nomi.api.base", "https://auth.missdrop.cn").replaceAll("/+$", "");
     /// Yggdrasil root used for account and launch validation.
     public static final String AUTH = BASE + "/api/yggdrasil/";
     /// Client does not follow redirects, so credentials cannot be forwarded to another endpoint.
