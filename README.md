@@ -9,14 +9,14 @@
 - 账户卡片提供改名与原生皮肤上传按钮，皮肤模型自动判断。也可在群内发送 `改名 <新id>`，随后重新登录。
 - 改名默认冷却 7 天，UUID 不变；账户仅使用便携存储，不加载全局账户。
 
-认证地址由部署配置决定，可用 `-Dnomi.api.base=https://auth.example.com` 指定。
+认证地址通过构建参数 `-PnomiApiBase` 或环境变量 `NOMI_API_BASE` 配置；未配置时使用本机开发地址。运行时可用 `-Dnomi.api.base=https://auth.example.com` 覆盖。
 
 ## 构建与配置
 
 需要 JDK 17 或更高版本。Windows 执行：
 
 ```text
-gradlew.bat :HMCL:makeExecutables -PnomiDefaultServer=play.example.com
+gradlew.bat :HMCL:makeExecutables -PnomiApiBase=https://auth.example.com -PnomiDefaultServer=play.example.com
 java -jar HMCL/build/libs/HMCL-3.17.SNAPSHOT.jar
 ```
 

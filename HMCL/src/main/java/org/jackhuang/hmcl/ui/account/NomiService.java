@@ -22,6 +22,7 @@ import com.google.gson.JsonParser;
 import org.jackhuang.hmcl.auth.Account;
 import org.jackhuang.hmcl.auth.AccountID;
 import org.jackhuang.hmcl.setting.Accounts;
+import org.jackhuang.hmcl.util.io.JarUtils;
 import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorServer;
 import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorAccount;
 import org.jetbrains.annotations.NotNullByDefault;
@@ -40,8 +41,9 @@ import java.time.Duration;
 /// Nomi's fixed authentication endpoint and bounded HTTP client.
 @NotNullByDefault
 public final class NomiService {
-    /// Public base URL; supply the deployment address through -Dnomi.api.base at release time.
-    public static final String BASE = System.getProperty("nomi.api.base", "https://auth.missdrop.cn").replaceAll("/+$", "");
+    /// Public base URL from build configuration, optionally overridden at runtime.
+    public static final String BASE = System.getProperty("nomi.api.base",
+            JarUtils.getAttribute("nomi.api.base", "http://127.0.0.1:8000")).replaceAll("/+$", "");
     /// Yggdrasil root used for account and launch validation.
     public static final String AUTH = BASE + "/api/yggdrasil/";
     /// Client does not follow redirects, so credentials cannot be forwarded to another endpoint.
