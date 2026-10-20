@@ -19,7 +19,6 @@ package org.jackhuang.hmcl.ui.main;
 
 import com.google.gson.*;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.TitledPane;
 import javafx.scene.image.Image;
 import javafx.scene.layout.VBox;
 import org.jackhuang.hmcl.Metadata;
@@ -66,10 +65,6 @@ public final class AboutPage extends SpinnerPane {
             about.getContent().setAll(launcher, upstream);
         }
 
-        ComponentList thanks = loadIconedTwoLineList("/assets/about/thanks.json");
-        var upstreamThanks = new TitledPane(i18n("about.thanks_to"), thanks);
-        upstreamThanks.setExpanded(false);
-
         ComponentList deps = loadIconedTwoLineList("/assets/about/deps.json");
 
         ComponentList legal = new ComponentList();
@@ -95,7 +90,6 @@ public final class AboutPage extends SpinnerPane {
         content.getChildren().setAll(
                 ComponentList.createComponentListTitle(i18n("about")),
                 about,
-                upstreamThanks,
                 ComponentList.createComponentListTitle(i18n("about.dependency")),
                 deps,
                 ComponentList.createComponentListTitle(i18n("about.legal")),
