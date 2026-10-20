@@ -70,9 +70,9 @@ jobs:
             test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
             gh release upload "$RELEASE_TAG" release/* --clobber
           else
-            gh release create "$RELEASE_TAG" release/* --draft --verify-tag --title "Nomi Launcher $NOMI_VERSION" --generate-notes "${options[@]}"
+            gh release create "$RELEASE_TAG" release/* --draft --verify-tag --title "$RELEASE_TAG" --generate-notes "${options[@]}"
           fi
-          gh release edit "$RELEASE_TAG" --draft=false "${options[@]}"
+          gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --draft=false "${options[@]}"
       - name: Remove signing material
         if: always()
         run: rm -f "$RUNNER_TEMP/nomi-signing-key.pk8"
