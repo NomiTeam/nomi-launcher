@@ -16,6 +16,7 @@ import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.security.KeyFactory
 import java.security.MessageDigest
+import java.security.spec.X509EncodedKeySpec
 import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.zip.ZipFile
@@ -36,7 +37,12 @@ tasks.test {
 
 val isOfficial = JenkinsUtils.IS_ON_CI || GitHubActionUtils.IS_ON_OFFICIAL_REPO
 
-val versionType = System.getenv("VERSION_TYPE") ?: if (isOfficial) "nightly" else "unofficial"
+val nomiVersion = providers.gradleProperty("nomiVersion").orNull
+if (nomiVersion != null && !nomiVersion.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-(?:alpha|beta|rc)\\.[0-9]+)?"))) {
+    throw GradleException("nomiVersion must be x.y.z or x.y.z-rc.n (alpha/beta also supported)")
+}
+val versionType = if (nomiVersion != null) { if ('-' in nomiVersion) "dev" else "stable" }
+    else System.getenv("VERSION_TYPE") ?: if (isOfficial) "nightly" else "unofficial"
 val versionRoot = System.getenv("VERSION_ROOT") ?: projectConfig.getProperty("versionRoot") ?: "3"
 
 val microsoftAuthId = System.getenv("MICROSOFT_AUTH_ID") ?: ""
@@ -45,7 +51,9 @@ val curseForgeApiKey = System.getenv("CURSEFORGE_API_KEY") ?: ""
 val launcherExe = System.getenv("HMCL_LAUNCHER_EXE") ?: ""
 
 val buildNumber = System.getenv("BUILD_NUMBER")?.toInt()
-if (buildNumber != null) {
+if (nomiVersion != null) {
+    version = nomiVersion
+} else if (buildNumber != null) {
     version = if (JenkinsUtils.IS_ON_CI && versionType == "dev") {
         "$versionRoot.0.$buildNumber"
     } else {
@@ -102,7 +110,7 @@ fun createChecksum(file: File) {
 }
 
 fun attachSignature(jar: File) {
-    val keyLocation = System.getenv("HMCL_SIGNATURE_KEY")
+    val keyLocation = System.getenv("NOMI_SIGNATURE_KEY")
     if (keyLocation == null) {
         logger.warn("Missing signature key")
         return
@@ -111,16 +119,24 @@ fun attachSignature(jar: File) {
     val privatekey = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(File(keyLocation).readBytes()))
     val signer = Signature.getInstance("SHA512withRSA")
     signer.initSign(privatekey)
+    val verifier = Signature.getInstance("SHA512withRSA")
+    verifier.initVerify(KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(
+        file("src/main/resources/assets/nomi_update_publickey.der").readBytes())))
     ZipFile(jar).use { zip ->
         zip.stream()
             .sorted(Comparator.comparing { it.name })
             .filter { it.name != "META-INF/hmcl_signature" }
             .forEach {
-                signer.update(digest("SHA-512", it.name.toByteArray()))
-                signer.update(digest("SHA-512", zip.getInputStream(it).readBytes()))
+                val nameHash = digest("SHA-512", it.name.toByteArray())
+                val contentHash = digest("SHA-512", zip.getInputStream(it).readBytes())
+                signer.update(nameHash)
+                signer.update(contentHash)
+                verifier.update(nameHash)
+                verifier.update(contentHash)
             }
     }
     val signature = signer.sign()
+    check(verifier.verify(signature)) { "Nomi signing key does not match the embedded public key" }
     FileSystems.newFileSystem(URI.create("jar:" + jar.toURI()), emptyMap<String, Any>()).use { zipfs ->
         Files.newOutputStream(zipfs.getPath("META-INF/hmcl_signature")).use { it.write(signature) }
     }
