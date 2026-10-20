@@ -86,7 +86,7 @@ public class AccountListItem extends RadioButton {
             String name = account.getProfileName();
             return StringUtils.isBlank(name) ? account.getProfileID().toString() : name;
         }, account);
-        if (account instanceof ClassicAccount classicAccount) {
+        if (account instanceof ClassicAccount classicAccount && !NomiService.permits(account)) {
             title.bind(Bindings.concat(profileName, " - ", classicAccount.getLoginName()));
         } else {
             title.bind(profileName);
@@ -102,7 +102,7 @@ public class AccountListItem extends RadioButton {
         return Task.runAsync(() -> {
             account.clearCache();
             try {
-                account.logIn();
+                NomiService.logIn(account);
             } catch (CredentialExpiredException e) {
                 try {
                     DialogController.logIn(account);

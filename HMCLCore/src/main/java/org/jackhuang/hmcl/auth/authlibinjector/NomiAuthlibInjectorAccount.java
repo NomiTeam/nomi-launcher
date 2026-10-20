@@ -57,10 +57,26 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
 
     /// Validates the game session and rotates the launcher credential only when renewal is needed.
     public synchronized void ensureGameSession() throws AuthenticationException {
-        if (service.validate(session.getAccessToken(), session.getClientToken())) return;
         try {
+            var profileRequest = HttpRequest.newBuilder(refreshEndpoint().resolve("../game/profile"))
+                    .timeout(Duration.ofSeconds(12)).header("Authorization", "Bearer " + session.getAccessToken()).GET().build();
+            var profileResponse = HTTP.send(profileRequest, HttpResponse.BodyHandlers.ofString());
+            if (profileResponse.statusCode() == 200) {
+                var profile = JsonParser.parseString(profileResponse.body()).getAsJsonObject();
+                if (!profileID.equals(org.glavo.uuid.UUIDs.parse(requireString(profile, "id"))))
+                    throw new IOException("认证响应中的角色不匹配。");
+                String name = requireString(profile, "name");
+                if (!name.equals(getProfileName())) acceptProfileName(name);
+                return;
+            }
+            if (profileResponse.statusCode() != 401 && profileResponse.statusCode() != 403)
+                throw new IOException("账号服务暂时不可用，请稍后重试。");
+            // Stable across retries and process restarts; only the matching spent credential can recover a grant.
+            String requestId = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(("nomi-refresh-v1:" + refreshToken).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             var request = HttpRequest.newBuilder(refreshEndpoint()).timeout(Duration.ofSeconds(12))
                     .header("Authorization", "Bearer " + refreshToken)
+                    .header("X-Request-ID", requestId)
                     .POST(HttpRequest.BodyPublishers.noBody()).build();
             var response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 401 || response.statusCode() == 403)
@@ -85,7 +101,7 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new AuthenticationException("刷新请求已中断。", exception);
-        } catch (IOException | RuntimeException exception) {
+        } catch (IOException | RuntimeException | java.security.NoSuchAlgorithmException exception) {
             throw new AuthenticationException("无法刷新登录会话，请检查网络后重试。", exception);
         }
     }
@@ -108,7 +124,7 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
     @Override
     public synchronized AuthInfo logIn() throws AuthenticationException {
         ensureGameSession();
-        return super.logIn();
+        return inject(session::toAuthInfo);
     }
 
     /// Writes rotating credentials only to the launcher's private account file.

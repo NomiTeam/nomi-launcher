@@ -208,8 +208,11 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
             payload.addProperty("name", name);
             CompletableFuture.supplyAsync(() -> {
                 try {
+                    if (account instanceof NomiAuthlibInjectorAccount nomi) {
+                        nomi.ensureGameSession();
+                        NomiService.persistCredentials(account);
+                    }
                     synchronized (account) {
-                        if (account instanceof NomiAuthlibInjectorAccount nomi) nomi.ensureGameSession();
                         var privateData = new JsonObject();
                         account.writePrivateData(privateData);
                         return NomiService.request("PATCH", "/api/v1/game/profiles/" + account.getProfileID() + "/name",

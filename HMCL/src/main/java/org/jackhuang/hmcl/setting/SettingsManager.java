@@ -518,6 +518,18 @@ public final class SettingsManager {
         privateData.setBackupOnNextSave(false);
     }
 
+    /// Saves a portable account credential snapshot synchronously; callers must use the JavaFX thread.
+    /// Unlike automatic saves, failures propagate so login cannot silently lose a rotating credential.
+    public static void persistPortableCredentials(Account account) throws IOException {
+        if (!javafx.application.Platform.isFxApplicationThread()) throw new IllegalStateException("JavaFX thread required");
+        if (!account.isPortable() || isGameAccountsReadOnly()) throw new IOException("账号文件只读，无法保存登录凭据。");
+        if (!Accounts.getAccounts().contains(account)) throw new IOException("账号已移除，请重新选择账号。");
+        var data = new JsonObject();
+        account.writePrivateData(data);
+        gameAccountPrivateData().putPrivateData(account.getAccountID(), data);
+        GAME_ACCOUNT_PRIVATE_DATA_FILE.saveSync(gameAccountPrivateData());
+    }
+
     /// Updates the per-workspace account metadata and private data stores.
     ///
     /// @param metadataAccounts metadata-only account records

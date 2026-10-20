@@ -81,7 +81,8 @@ public class AuthlibInjectorAccount extends YggdrasilAccount {
         }
     }
 
-    private AuthInfo inject(ExceptionalSupplier<AuthInfo, AuthenticationException> loginAction) throws AuthenticationException {
+    /// Adds injector metadata and its artifact to an already validated authentication result.
+    protected AuthInfo inject(ExceptionalSupplier<AuthInfo, AuthenticationException> loginAction) throws AuthenticationException {
         CompletableFuture<String> prefetchedMetaTask = CompletableFuture.supplyAsync(() -> {
             try {
                 return server.fetchMetadataResponse();

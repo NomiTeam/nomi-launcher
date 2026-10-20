@@ -53,6 +53,31 @@ public final class NomiService {
     /// Utility class without instances.
     private NomiService() { }
 
+    /// Logs in off the UI thread, then confirms private credentials are on disk before continuing.
+    public static org.jackhuang.hmcl.auth.AuthInfo logIn(Account account)
+            throws org.jackhuang.hmcl.auth.AuthenticationException {
+        var auth = account.logIn();
+        persistCredentials(account);
+        return auth;
+    }
+
+    /// Serializes credential persistence with UI account changes without holding an account monitor.
+    public static void persistCredentials(Account account) throws org.jackhuang.hmcl.auth.AuthenticationException {
+        var save = new java.util.concurrent.FutureTask<Void>(() -> {
+            org.jackhuang.hmcl.setting.SettingsManager.persistPortableCredentials(account);
+            return null;
+        });
+        if (javafx.application.Platform.isFxApplicationThread()) save.run();
+        else javafx.application.Platform.runLater(save);
+        try { save.get(); }
+        catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new org.jackhuang.hmcl.auth.AuthenticationException("保存登录凭据已中断。", exception);
+        } catch (java.util.concurrent.ExecutionException exception) {
+            throw new org.jackhuang.hmcl.auth.AuthenticationException("无法保存登录凭据，请检查磁盘空间和目录权限后重试。", exception.getCause());
+        }
+    }
+
     /// Accepts only accounts backed by the configured Nomi Yggdrasil root.
     public static boolean permits(@Nullable Account account) {
         return account != null && account.isPortable() && account instanceof AuthlibInjectorAccount injector
@@ -89,6 +114,14 @@ public final class NomiService {
             throws IOException, InterruptedException {
         var builder = HttpRequest.newBuilder(URI.create(BASE + path)).timeout(Duration.ofSeconds(12));
         if (token != null) builder.header("Authorization", "Bearer " + token);
+        if (token != null && "POST".equals(method) && path.matches("/api/v1/logins/[^/]+/session")) {
+            try {
+                builder.header("X-Request-ID", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                        .digest((path + ":" + token).getBytes(StandardCharsets.UTF_8))));
+            } catch (java.security.NoSuchAlgorithmException exception) {
+                throw new IOException("无法生成登录请求标识。", exception);
+            }
+        }
         builder.header("Content-Type", "application/json");
         builder.method(method, body == null ? HttpRequest.BodyPublishers.noBody()
                 : HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8));
