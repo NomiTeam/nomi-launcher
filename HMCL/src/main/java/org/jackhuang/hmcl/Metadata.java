@@ -61,7 +61,8 @@ public final class Metadata {
     public static final String DOCS_URL = "https://docs.hmcl.net";
     public static final String CONTACT_URL = DOCS_URL + "/help.html";
     public static final String CHANGELOG_URL = DOCS_URL + "/changelog/";
-    public static final String EULA_URL = DOCS_URL + "/eula/hmcl.html";
+    /// Fork licensing notice preserves upstream terms and points to the distributed project source.
+    public static final String EULA_URL = "https://github.com/NomiTeam/nomi-launcher/blob/nomi/NOTICES.md";
     public static final String GROUPS_URL = "https://www.bilibili.com/opus/905435541874409529";
 
     public static final String BUILD_CHANNEL = JarUtils.getAttribute("hmcl.version.type", "nightly");

@@ -42,6 +42,7 @@ public final class AboutPage extends SpinnerPane {
 
     private final WeakListenerHolder holder = new WeakListenerHolder();
 
+    /// Shows Nomi product information while preserving upstream attribution and dependency notices.
     public AboutPage() {
         VBox content = new VBox();
         content.getStyleClass().add("spinner-pane-content");
@@ -52,19 +53,17 @@ public final class AboutPage extends SpinnerPane {
 
         ComponentList about = new ComponentList();
         {
-            var launcher = LineButton.createExternalLinkButton(Metadata.PUBLISH_URL);
+            var launcher = LineButton.createExternalLinkButton("https://github.com/NomiTeam/nomi-launcher");
             launcher.setLargeTitle(true);
             launcher.setLeading(FXUtils.newBuiltinImage("/assets/img/icon.png"));
-            launcher.setTitle("Hello Minecraft! Launcher");
+            launcher.setTitle(Metadata.FULL_NAME);
             launcher.setSubtitle(Metadata.VERSION);
 
-            var author = LineButton.createExternalLinkButton("https://space.bilibili.com/1445341");
-            author.setLargeTitle(true);
-            author.setLeading(FXUtils.newBuiltinImage("/assets/img/yellow_fish.png"));
-            author.setTitle("huanghongxun");
-            author.setSubtitle(i18n("about.author.statement"));
-
-            about.getContent().setAll(launcher, author);
+            var upstream = LineButton.createExternalLinkButton("https://github.com/HMCL-dev/HMCL");
+            upstream.setLargeTitle(true);
+            upstream.setTitle("上游项目与版权归属");
+            upstream.setSubtitle("基于 HMCL，保留原作者及贡献者的版权、许可证和致谢。");
+            about.getContent().setAll(launcher, upstream);
         }
 
         ComponentList thanks = loadIconedTwoLineList("/assets/about/thanks.json");
@@ -76,17 +75,17 @@ public final class AboutPage extends SpinnerPane {
             var copyright = new LineButton();
             copyright.setLargeTitle(true);
             copyright.setTitle(i18n("about.copyright"));
-            copyright.setSubtitle(i18n("about.copyright.statement"));
+            copyright.setSubtitle(i18n("about.copyright.statement") + "；Nomi 定制修改 © 2026 NomiTeam 及贡献者。");
 
             var claim = LineButton.createExternalLinkButton(Metadata.EULA_URL);
             claim.setLargeTitle(true);
-            claim.setTitle(i18n("about.claim"));
-            claim.setSubtitle(i18n("about.claim.statement"));
+            claim.setTitle("开源许可与法律声明");
+            claim.setSubtitle("查看许可证、上游附加条款及修改说明。");
 
-            var openSource = LineButton.createExternalLinkButton("https://github.com/HMCL-dev/HMCL");
+            var openSource = LineButton.createExternalLinkButton("https://github.com/NomiTeam/nomi-launcher");
             openSource.setLargeTitle(true);
             openSource.setTitle(i18n("about.open_source"));
-            openSource.setSubtitle(i18n("about.open_source.statement"));
+            openSource.setSubtitle("Nomi Launcher 对应源码 · GPLv3 及上游附加条款");
 
             legal.getContent().setAll(copyright, claim, openSource);
         }

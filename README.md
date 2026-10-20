@@ -40,4 +40,4 @@ Linux/macOS 使用 `./gradlew`。该任务生成 JAR、Windows EXE 和启动脚�
 
 ## 上游与许可证
 
-定制分支为 `nomi`，上游基线见 `UPSTREAM_COMMIT.txt`。沿用 HMCL 的 [许可证及附加条款](LICENSE)，发布时保留版权声明并提供对应源码；本构建不包含 HMCL 官方签名。
+定制分支为 `nomi`，上游基线见 `UPSTREAM_COMMIT.txt`。沿用 HMCL 的 [GPL 许可证](LICENSE)及[附加条款、版权和修改声明](NOTICES.md)，发布时保留版权声明并提供对应源码；本构建不包含 HMCL 官方签名。
