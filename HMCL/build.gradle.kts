@@ -265,6 +265,10 @@ tasks.shadowJar {
 }
 
 tasks.processResources {
+    into("assets/legal") {
+        from(rootProject.file("LICENSE"), rootProject.file("NOTICES.md"))
+    }
+
     dependsOn(createPropertiesFile)
     dependsOn(upsideDownTranslate)
     dependsOn(createLocaleNamesResourceBundle)
