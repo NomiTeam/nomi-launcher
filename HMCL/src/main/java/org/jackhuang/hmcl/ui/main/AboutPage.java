@@ -62,13 +62,6 @@ public final class AboutPage extends SpinnerPane {
             upstream.setLargeTitle(true);
             upstream.setTitle("上游项目与版权归属");
             upstream.setSubtitle("基于 HMCL 的定制版本");
-            about.getContent().setAll(launcher, upstream);
-        }
-
-        ComponentList deps = loadIconedTwoLineList("/assets/about/deps.json");
-
-        ComponentList legal = new ComponentList();
-        {
             var copyright = new LineButton();
             copyright.setLargeTitle(true);
             copyright.setTitle(i18n("about.copyright"));
@@ -77,23 +70,18 @@ public final class AboutPage extends SpinnerPane {
             var claim = LineButton.createExternalLinkButton(Metadata.EULA_URL);
             claim.setLargeTitle(true);
             claim.setTitle("开源许可与法律声明");
-            claim.setSubtitle("查看许可证、上游附加条款及修改说明。");
+            claim.setSubtitle("GPLv3 及上游附加条款 · 查看完整许可与修改说明");
 
-            var openSource = LineButton.createExternalLinkButton("https://github.com/NomiTeam/nomi-launcher");
-            openSource.setLargeTitle(true);
-            openSource.setTitle(i18n("about.open_source"));
-            openSource.setSubtitle("Nomi Launcher 对应源码 · GPLv3 及上游附加条款");
-
-            legal.getContent().setAll(copyright, claim, openSource);
+            about.getContent().setAll(launcher, upstream, copyright, claim);
         }
 
+        ComponentList deps = loadIconedTwoLineList("/assets/about/deps.json");
+
         content.getChildren().setAll(
-                ComponentList.createComponentListTitle(i18n("about")),
+                ComponentList.createComponentListTitle("关于与法律声明"),
                 about,
                 ComponentList.createComponentListTitle(i18n("about.dependency")),
-                deps,
-                ComponentList.createComponentListTitle(i18n("about.legal")),
-                legal
+                deps
         );
     }
 
