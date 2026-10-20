@@ -52,15 +52,20 @@ public final class Metadata {
     public static final int MINIMUM_SUPPORTED_JAVA_VERSION = 17;
     public static final int RECOMMENDED_JAVA_VERSION = 21;
 
-    public static final String PUBLISH_URL = "https://hmcl.huangyuhui.net";
-    public static final String DOWNLOAD_URL = PUBLISH_URL + "/download";
+    /// Nomi project homepage for user-facing project links.
+    public static final String PUBLISH_URL = "https://github.com/NomiTeam/nomi-launcher";
+    /// Nomi executable downloads.
+    public static final String DOWNLOAD_URL = PUBLISH_URL + "/releases";
     public static final String HMCL_UPDATE_URL = System.getProperty("hmcl.update_source.override", PUBLISH_URL + "/api/update_link");
     /// Nomi release page used for manual upgrades.
     public static final String MANUAL_UPDATE_URL = "https://github.com/NomiTeam/nomi-launcher/releases";
 
-    public static final String DOCS_URL = "https://docs.hmcl.net";
-    public static final String CONTACT_URL = DOCS_URL + "/help.html";
-    public static final String CHANGELOG_URL = DOCS_URL + "/changelog/";
+    /// User documentation for this distribution.
+    public static final String DOCS_URL = PUBLISH_URL + "#readme";
+    /// Shared help destination used by the title bar and error windows.
+    public static final String CONTACT_URL = DOCS_URL;
+    /// Release history for this distribution.
+    public static final String CHANGELOG_URL = PUBLISH_URL + "/releases";
     /// Fork licensing notice preserves upstream terms and points to the distributed project source.
     public static final String EULA_URL = "https://github.com/NomiTeam/nomi-launcher/blob/nomi/NOTICES.md";
     public static final String GROUPS_URL = "https://www.bilibili.com/opus/905435541874409529";
