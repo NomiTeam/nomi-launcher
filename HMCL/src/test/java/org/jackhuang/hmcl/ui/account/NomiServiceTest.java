@@ -76,6 +76,19 @@ class NomiServiceTest {
     /// Number of refresh grants consumed by the fake backend.
     private static final AtomicInteger refreshed = new AtomicInteger();
 
+    /// Injects transient application creation failures for recovery UI tests.
+    private static final AtomicInteger creationFailures = new AtomicInteger();
+    /// Counts creation attempts independently of private polling.
+    private static final AtomicInteger creationAttempts = new AtomicInteger();
+    /// Lifetime used by the fake application creation route.
+    private static volatile long codeLifetime = 300;
+    /// Current name returned by an authenticated profile lookup.
+    private static volatile String profileName = "Alice";
+    /// Counts the legacy validation route to detect redundant validation.
+    private static final AtomicInteger legacyValidations = new AtomicInteger();
+    /// Captures idempotency keys across deliberately lost refresh responses.
+    private static final java.util.List<String> lostResponseKeys = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     /// Clipboard contents restored after rendering and command-copy verification.
     private static final Map<DataFormat, Object> savedClipboard = new HashMap<>();
 
@@ -105,13 +118,23 @@ class NomiServiceTest {
                 if ("Bearer private-poll".equals(exchange.getRequestHeaders().getFirst("Authorization")))
                     cancelled.incrementAndGet();
                 exchange.sendResponseHeaders(204, -1);
+            } else if ("GET".equals(exchange.getRequestMethod())) {
+                byte[] bytes = "{\"status\":\"PENDING\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, bytes.length);
+                exchange.getResponseBody().write(bytes);
             } else {
+                creationAttempts.incrementAndGet();
+                if (creationFailures.getAndUpdate(value -> Math.max(0, value - 1)) > 0) {
+                    exchange.sendResponseHeaders(503, -1);
+                    exchange.close();
+                    return;
+                }
                 entered.countDown();
                 try { release.await(5, TimeUnit.SECONDS); }
                 catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
                 byte[] bytes = ("{\"request_id\":\"application\",\"poll_token\":\"private-poll\","
                         + "\"code\":\"ABCD-EFGH-JKLM\",\"group_label\":\"测试群\",\"expires_at\":"
-                        + (Instant.now().getEpochSecond() + 300) + "}").getBytes(StandardCharsets.UTF_8);
+                        + (Instant.now().getEpochSecond() + codeLifetime) + "}").getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(201, bytes.length);
                 exchange.getResponseBody().write(bytes);
             }
@@ -124,6 +147,7 @@ class NomiServiceTest {
             exchange.close();
         });
         server.createContext("/api/yggdrasil/authserver/validate", exchange -> {
+            legacyValidations.incrementAndGet();
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             String token = JsonParser.parseString(body).getAsJsonObject().get("accessToken").getAsString();
             if (token.equals("game") || token.equals("renewed-game")) exchange.sendResponseHeaders(204, -1);
@@ -134,12 +158,30 @@ class NomiServiceTest {
             }
             exchange.close();
         });
+        server.createContext("/api/v1/game/profile", exchange -> {
+            String token = exchange.getRequestHeaders().getFirst("Authorization");
+            if ("Bearer game".equals(token) || "Bearer renewed-game".equals(token)) {
+                byte[] bytes = ("{\"id\":\"12345678901234567890123456789012\",\"name\":\"" + profileName + "\"}").getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, bytes.length);
+                exchange.getResponseBody().write(bytes);
+            } else exchange.sendResponseHeaders(403, -1);
+            exchange.close();
+        });
         server.createContext("/api/v1/sessions/refresh", exchange -> {
             String token = exchange.getRequestHeaders().getFirst("Authorization");
             if ("DELETE".equals(exchange.getRequestMethod())) {
                 exchange.sendResponseHeaders(204, -1);
-            } else if ("Bearer launcher-refresh".equals(token) || "Bearer wrong-profile".equals(token)) {
+            } else if ("Bearer launcher-refresh".equals(token) || "Bearer wrong-profile".equals(token) || "Bearer drop-response".equals(token)) {
                 refreshed.incrementAndGet();
+                if ("Bearer drop-response".equals(token)) {
+                    lostResponseKeys.add(Objects.requireNonNull(exchange.getRequestHeaders().getFirst("X-Request-ID")));
+                    if (lostResponseKeys.size() == 1) {
+                        exchange.sendResponseHeaders(200, 100);
+                        exchange.getResponseBody().write('x');
+                        exchange.close();
+                        return;
+                    }
+                }
                 var session = refreshSession("renewed-game", "rotated-refresh");
                 if ("Bearer wrong-profile".equals(token))
                     session.getAsJsonObject("game").getAsJsonObject("selectedProfile").addProperty("id", "00000000000000000000000000000000");
@@ -246,10 +288,12 @@ class NomiServiceTest {
         var pane = fx(() -> { var view = new NomiAccountPane(); view.onDialogShown(); return view; });
         assertTrue(entered.await(10, TimeUnit.SECONDS));
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!fx(() -> "登录 ABCD-EFGH-JKLM".equals(Clipboard.getSystemClipboard().getString()))
+        while (!fx(() -> pane.lookup(".code-label") != null && "登录 ABCD-EFGH-JKLM".equals(Clipboard.getSystemClipboard().getString()))
                 && System.nanoTime() < deadline) Thread.sleep(20);
         fx(() -> {
             assertEquals("登录 ABCD-EFGH-JKLM", Clipboard.getSystemClipboard().getString());
+            assertNotNull(pane.lookup(".code-label"));
+            assertTrue(pane.lookupAll(".label").stream().anyMatch(node -> node instanceof javafx.scene.control.Label label && label.getText().startsWith("验证码剩余")));
             var root = new StackPane(pane);
             root.setStyle("-fx-background-color: #292930;");
             var scene = new Scene(root, 600, 360, Color.web("#292930"));
@@ -258,9 +302,9 @@ class NomiServiceTest {
                 scene.getStylesheets().add(Objects.requireNonNull(getClass().getResource("/assets/css/" + css)).toExternalForm());
             root.applyCss();
             root.layout();
-            var buttons = root.lookupAll(".button");
+            var buttons = root.lookupAll(".button").stream().filter(javafx.scene.Node::isVisible).toList();
             assertEquals(1, buttons.size());
-            assertEquals("关闭", ((Button) buttons.iterator().next()).getText());
+            assertEquals("关闭", ((Button) buttons.get(0)).getText());
             var snapshot = root.snapshot(null, null);
             var output = new BufferedImage((int) snapshot.getWidth(), (int) snapshot.getHeight(), BufferedImage.TYPE_INT_ARGB);
             for (int y = 0; y < output.getHeight(); y++)
@@ -363,12 +407,87 @@ class NomiServiceTest {
         };
         var account = new NomiAuthlibInjectorAccount(original.getAccountID(), server, provider, "Alice",
                 org.jackhuang.hmcl.auth.yggdrasil.YggdrasilSession.fromStorage(metadata, privateData), "launcher-refresh");
+        int validationsBefore = legacyValidations.get();
         var auth = account.logIn();
+        assertEquals(validationsBefore, legacyValidations.get());
         assertEquals("renewed-game", auth.getAccessToken());
         var args = auth.getLaunchArguments(new org.jackhuang.hmcl.game.LaunchOptions.Builder().create());
         assertFalse(args.toString().contains("rotated-refresh"));
         assertFalse(args.toString().contains("launcher-refresh"));
         assertEquals(original.getProfileID(), account.getProfileID());
+    }
+
+    /// A process restart repeats the same request key after a transport-truncated response.
+    @Test
+    void lostRefreshResponseCanBeRetriedAfterReload() throws Exception {
+        lostResponseKeys.clear();
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var account = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(server, refreshSession("expired-game", "drop-response"));
+        var metadata = new JsonObject();
+        var data = new JsonObject();
+        account.writeMetadata(metadata);
+        account.writePrivateData(data);
+        assertThrows(AuthenticationException.class, account::ensureGameSession);
+        var restored = (NomiAuthlibInjectorAccount) org.jackhuang.hmcl.setting.Accounts
+                .getAccountFactoryByAuthlibInjectorServer(server).fromStorage(metadata, data);
+        restored.ensureGameSession();
+        assertEquals(2, lostResponseKeys.size());
+        assertEquals(lostResponseKeys.get(0), lostResponseKeys.get(1));
+        assertEquals(64, lostResponseKeys.get(0).length());
+    }
+
+    /// A bot rename updates the visible name and never changes the profile UUID or refresh grant.
+    @Test
+    void profileLookupUpdatesBotRename() throws Exception {
+        var account = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(new AuthlibInjectorServer(NomiService.AUTH), refreshSession("game", "launcher-refresh"));
+        var uuid = account.getProfileID();
+        try {
+            profileName = "BotRenamed";
+            account.ensureGameSession();
+            assertEquals("BotRenamed", account.getProfileName());
+            assertEquals(uuid, account.getProfileID());
+            var data = new JsonObject();
+            account.writePrivateData(data);
+            assertEquals("launcher-refresh", data.get(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY).getAsString());
+        } finally { profileName = "Alice"; }
+    }
+
+    /// Transient failures expose retry, and retry reuses the dialog instead of requiring it to close.
+    @Test
+    void failedCreationCanRetryInPlace() throws Exception {
+        release = new CountDownLatch(0);
+        creationFailures.set(1);
+        var pane = fx(() -> { var view = new NomiAccountPane(); view.onDialogShown(); return view; });
+        try {
+            awaitButton(pane, "重试");
+            int before = creationAttempts.get();
+            fx(() -> { pane.getActions().stream().filter(node -> node instanceof Button button && "重试".equals(button.getText())).map(node -> (Button) node).findFirst().orElseThrow().fire(); return true; });
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (creationAttempts.get() == before && System.nanoTime() < deadline) Thread.sleep(20);
+            assertEquals(before + 1, creationAttempts.get());
+        } finally { fx(() -> { pane.onDialogClosed(); return true; }); }
+    }
+
+    /// An expired code offers renewal while retaining the normal close action.
+    @Test
+    void expiredCodeCanBeRenewed() throws Exception {
+        release = new CountDownLatch(0);
+        codeLifetime = 1;
+        var pane = fx(() -> { var view = new NomiAccountPane(); view.onDialogShown(); return view; });
+        try { awaitButton(pane, "重新获取验证码"); }
+        finally {
+            codeLifetime = 300;
+            fx(() -> { pane.onDialogClosed(); return true; });
+        }
+    }
+
+    /// Waits for a visible recovery action without relying on a fixed UI timing delay.
+    private static void awaitButton(NomiAccountPane pane, String text) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!fx(() -> pane.getActions().stream().anyMatch(node -> node instanceof Button button && button.isVisible() && text.equals(button.getText())))) {
+            if (System.nanoTime() >= deadline) fail("Recovery action did not appear: " + text);
+            Thread.sleep(20);
+        }
     }
 
 }

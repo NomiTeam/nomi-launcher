@@ -63,6 +63,16 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
     private volatile boolean closed;
     /// Indicates that a session was imported and must not be cancelled.
     private boolean completed;
+    /// Extra controls appear only when recovery is needed, leaving the normal code page uncluttered.
+    private final JFXButton retry = new JFXButton("重试");
+    /// Starts another application after cancelling the previous one.
+    private final JFXButton renew = new JFXButton("重新获取验证码");
+    /// Displays the server-provided code lifetime independently of progress messages.
+    private final Label remaining = new Label();
+    /// Retains the failed operation so a transient error does not require another group command.
+    private @Nullable Runnable retryAction;
+    /// Server-provided expiry timestamp of the current application.
+    private long expiresAt;
 
     /// Creates the HMCL code display with a single close action.
     public NomiAccountPane() {
@@ -78,7 +88,13 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
         var close = new JFXButton("关闭");
         close.getStyleClass().add("dialog-accept");
         close.setOnAction(event -> fireEvent(new DialogCloseEvent()));
-        setActions(close);
+        retry.setOnAction(event -> { if (retryAction != null) retryAction.run(); });
+        renew.setOnAction(event -> restartRequest());
+        retry.setVisible(false);
+        retry.setManaged(false);
+        renew.setVisible(false);
+        renew.setManaged(false);
+        setActions(retry, renew, close);
         setPrefWidth(560);
     }
 
@@ -86,6 +102,8 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
     private <T> void run(Callable<T> action, Consumer<T> success) {
         if (busy || closed) return;
         busy = true;
+        retryAction = () -> run(action, success);
+        showRecovery(false, false);
         CompletableFuture.supplyAsync(() -> {
             try { return action.call(); }
             catch (Exception exception) { throw new java.util.concurrent.CompletionException(exception); }
@@ -101,10 +119,42 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
                 return;
             }
             if (failure != null) {
+                polling.stop();
                 @Nullable Throwable cause = failure.getCause();
                 status.setText(cause == null ? "请求失败，请关闭后重新获取验证码。" : cause.getMessage());
-            } else success.accept(result);
+                showRecovery(true, true);
+            } else {
+                try { success.accept(result); }
+                catch (RuntimeException exception) {
+                    status.setText("账号响应无法处理，请重新获取验证码。");
+                    showRecovery(false, true);
+                }
+            }
         }));
+    }
+
+    /// Shows recovery controls only for errors and terminal application states.
+    private void showRecovery(boolean canRetry, boolean canRenew) {
+        retry.setVisible(canRetry);
+        retry.setManaged(canRetry);
+        renew.setVisible(canRenew);
+        renew.setManaged(canRenew);
+    }
+
+    /// Cancels the old code before creating a replacement, with no overlapping application requests.
+    private void restartRequest() {
+        if (busy || closed) return;
+        polling.stop();
+        @Nullable String oldId = requestId;
+        @Nullable String oldToken = pollToken;
+        requestId = null;
+        pollToken = null;
+        body.getChildren().setAll(status);
+        status.setText("正在获取验证码……");
+        run(() -> {
+            if (oldId != null && oldToken != null) cancelRequest(oldId, oldToken);
+            return NomiService.request("POST", "/api/v1/logins", new JsonObject(), null);
+        }, this::startPolling);
     }
 
     /// Creates the same unnamed application for all users.
@@ -129,18 +179,28 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
         var hint = new HintPane();
         hint.setText("完整命令已复制到剪贴板。在" + result.get("group_label").getAsString()
                 + "粘贴发送：" + command + "。没有账号时，按机器人的提示在群内发送 注册 <id>。关闭此窗口会取消申请。");
-        body.getChildren().setAll(hint, codeBox, status);
+        body.getChildren().setAll(hint, codeBox, status, remaining);
         status.setText("等待群验证……");
         FXUtils.copyText(command);
-        long expires = result.get("expires_at").getAsLong();
-        polling.getKeyFrames().setAll(new KeyFrame(Duration.seconds(2), event -> {
-            if (java.time.Instant.now().getEpochSecond() >= expires) {
+        expiresAt = result.get("expires_at").getAsLong();
+        updateRemaining();
+        polling.getKeyFrames().setAll(new KeyFrame(Duration.seconds(1), event -> {
+            long seconds = updateRemaining();
+            if (seconds == 0 && !busy) {
                 polling.stop();
-                status.setText("验证码已过期，请关闭后重新获取。");
-            } else poll();
+                status.setText("验证码已过期，请重新获取。");
+                showRecovery(false, true);
+            } else if (seconds > 0 && seconds % 2 == 0) poll();
         }));
         polling.setCycleCount(Timeline.INDEFINITE);
         polling.play();
+    }
+
+    /// Updates the countdown from the absolute server expiry rather than counting UI timer ticks.
+    private long updateRemaining() {
+        long seconds = Math.max(0, expiresAt - java.time.Instant.now().getEpochSecond());
+        remaining.setText("验证码剩余 " + seconds / 60 + " 分 " + seconds % 60 + " 秒");
+        return seconds;
     }
 
     /// Polls privately while the group member logs in or supplies a new account name.
@@ -150,9 +210,13 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
         String token = pollToken;
         run(() -> NomiService.request("GET", path, null, token), result -> {
             String state = result.get("status").getAsString();
-            if ("PENDING".equals(state)) return;
+            if ("PENDING".equals(state)) {
+                polling.play();
+                return;
+            }
             if ("AWAITING_NAME".equals(state)) {
                 status.setText("请在群内按机器人提示发送：注册 <id>");
+                polling.play();
                 return;
             }
             polling.stop();
@@ -167,6 +231,7 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
                     };
                 }
                 status.setText(message);
+                showRecovery(false, true);
             }
         });
     }
@@ -204,11 +269,24 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
                 Accounts.getAccounts().set(index, selected);
             } else Accounts.getAccounts().add(selected);
             Accounts.setSelectedAccount(selected);
-            completed = true;
-            requestId = null;
-            pollToken = null;
-            fireEvent(new DialogCloseEvent());
+            Account pending = selected;
+            retryAction = () -> finishSavedAccount(pending);
+            finishSavedAccount(selected);
         });
+    }
+
+    /// Confirms disk persistence before dismissing the successful application.
+    private void finishSavedAccount(Account selected) {
+        try { org.jackhuang.hmcl.setting.SettingsManager.persistPortableCredentials(selected); }
+        catch (java.io.IOException exception) {
+            status.setText("无法保存登录凭据，请检查磁盘空间和目录权限后重试。");
+            showRecovery(true, false);
+            return;
+        }
+        completed = true;
+        requestId = null;
+        pollToken = null;
+        fireEvent(new DialogCloseEvent());
     }
 
     /// A QQ-authenticated account and its raw session needed for record replacement.

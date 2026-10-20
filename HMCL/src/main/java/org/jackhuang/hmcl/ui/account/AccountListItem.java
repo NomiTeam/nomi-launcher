@@ -66,6 +66,7 @@ public class AccountListItem extends RadioButton {
     private final StringProperty title = new SimpleStringProperty();
     private final StringProperty subtitle = new SimpleStringProperty();
 
+    /// Builds an account card, showing only the current profile ID for Nomi accounts.
     public AccountListItem(Account account) {
         this.account = account;
         getStyleClass().clear();
@@ -98,6 +99,7 @@ public class AccountListItem extends RadioButton {
         return new AccountListItemSkin(this);
     }
 
+    /// Refreshes the account and persists rotating credentials before dependent operations run.
     public Task<?> refreshAsync() {
         return Task.runAsync(() -> {
             account.clearCache();
