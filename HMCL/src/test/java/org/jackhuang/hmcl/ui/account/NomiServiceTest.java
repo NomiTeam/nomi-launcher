@@ -18,6 +18,10 @@
 package org.jackhuang.hmcl.ui.account;
 
 import com.google.gson.JsonParser;
+import com.google.gson.JsonObject;
+import org.jackhuang.hmcl.auth.authlibinjector.NomiAuthlibInjectorAccount;
+import org.jackhuang.hmcl.auth.CredentialExpiredException;
+import org.jackhuang.hmcl.auth.AuthenticationException;
 import com.sun.net.httpserver.HttpServer;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -69,6 +73,9 @@ class NomiServiceTest {
     private static final AtomicInteger cancelled = new AtomicInteger();
 
 
+    /// Number of refresh grants consumed by the fake backend.
+    private static final AtomicInteger refreshed = new AtomicInteger();
+
     /// Clipboard contents restored after rendering and command-copy verification.
     private static final Map<DataFormat, Object> savedClipboard = new HashMap<>();
 
@@ -108,6 +115,32 @@ class NomiServiceTest {
                 exchange.sendResponseHeaders(201, bytes.length);
                 exchange.getResponseBody().write(bytes);
             }
+            exchange.close();
+        });
+        server.createContext("/api/yggdrasil/authserver/validate", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String token = JsonParser.parseString(body).getAsJsonObject().get("accessToken").getAsString();
+            if (token.equals("game") || token.equals("renewed-game")) exchange.sendResponseHeaders(204, -1);
+            else {
+                byte[] error = "{\"error\":\"ForbiddenOperationException\",\"errorMessage\":\"expired\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(403, error.length);
+                exchange.getResponseBody().write(error);
+            }
+            exchange.close();
+        });
+        server.createContext("/api/v1/sessions/refresh", exchange -> {
+            String token = exchange.getRequestHeaders().getFirst("Authorization");
+            if ("DELETE".equals(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(204, -1);
+            } else if ("Bearer launcher-refresh".equals(token) || "Bearer wrong-profile".equals(token)) {
+                refreshed.incrementAndGet();
+                var session = refreshSession("renewed-game", "rotated-refresh");
+                if ("Bearer wrong-profile".equals(token))
+                    session.getAsJsonObject("game").getAsJsonObject("selectedProfile").addProperty("id", "00000000000000000000000000000000");
+                byte[] bytes = session.toString().getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, bytes.length);
+                exchange.getResponseBody().write(bytes);
+            } else exchange.sendResponseHeaders("Bearer unavailable".equals(token) ? 503 : 403, -1);
             exchange.close();
         });
         server.start();
@@ -234,4 +267,73 @@ class NomiServiceTest {
         });
         awaitCancellation(before + 1);
     }
+    /// Builds an isolated device session without a real account or external service.
+    private static JsonObject refreshSession(String gameToken, String refreshToken) {
+        var result = JsonParser.parseString("""
+                {"login_name":"Alice","game":{"accessToken":"game","clientToken":"client",
+                  "selectedProfile":{"id":"12345678901234567890123456789012","name":"Alice"}}}
+                """).getAsJsonObject();
+        result.addProperty("refresh_token", refreshToken);
+        result.getAsJsonObject("game").addProperty("accessToken", gameToken);
+        return result;
+    }
+
+    /// Renewed credentials survive private storage reload and never enter public metadata.
+    @Test
+    void rotatingRefreshSurvivesStorageAndPreservesIdentity() throws Exception {
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var account = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(server,
+                refreshSession("expired-game", "launcher-refresh"));
+        var id = account.getAccountID();
+        var uuid = account.getProfileID();
+        int before = refreshed.get();
+        account.ensureGameSession();
+        account.ensureGameSession();
+        assertEquals(before + 1, refreshed.get());
+        var metadata = new JsonObject();
+        var privateData = new JsonObject();
+        account.writeMetadata(metadata);
+        account.writePrivateData(privateData);
+        assertFalse(metadata.has(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY));
+        assertFalse(metadata.toString().contains("rotated-refresh"));
+        assertEquals("rotated-refresh", privateData.get(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY).getAsString());
+        assertEquals("renewed-game", privateData.get("accessToken").getAsString());
+        var restored = (NomiAuthlibInjectorAccount) org.jackhuang.hmcl.setting.Accounts
+                .getAccountFactoryByAuthlibInjectorServer(server).fromStorage(metadata, privateData);
+        restored.ensureGameSession();
+        assertEquals(id, restored.getAccountID());
+        assertEquals(uuid, restored.getProfileID());
+        restored.acceptProfileName("RenamedAlice");
+        var renamed = new JsonObject();
+        restored.writePrivateData(renamed);
+        assertEquals("rotated-refresh", renamed.get(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY).getAsString());
+        assertEquals(uuid, restored.getProfileID());
+        assertEquals("RenamedAlice", restored.getProfileName());
+        restored.revokeSession();
+    }
+
+    /// Invalid launcher credentials request QQ login, whereas service outages remain retryable errors.
+    @Test
+    void refreshExpiryAndOutageAreDifferentFailures() {
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var expired = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(server, refreshSession("expired-game", "invalid"));
+        assertThrows(CredentialExpiredException.class, expired::ensureGameSession);
+        var unavailable = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(server, refreshSession("expired-game", "unavailable"));
+        var error = assertThrows(AuthenticationException.class, unavailable::ensureGameSession);
+        assertFalse(error instanceof CredentialExpiredException);
+    }
+
+    /// A mismatched profile cannot replace the saved account or private launcher credential.
+    @Test
+    void refreshRejectsChangedUuid() {
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var account = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(server, refreshSession("expired-game", "wrong-profile"));
+        var uuid = account.getProfileID();
+        assertThrows(AuthenticationException.class, account::ensureGameSession);
+        var stored = new JsonObject();
+        account.writePrivateData(stored);
+        assertEquals("wrong-profile", stored.get(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY).getAsString());
+        assertEquals(uuid, account.getProfileID());
+    }
+
 }

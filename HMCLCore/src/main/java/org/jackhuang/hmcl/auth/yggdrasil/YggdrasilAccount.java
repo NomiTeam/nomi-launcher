@@ -36,7 +36,8 @@ public abstract class YggdrasilAccount extends ClassicAccount {
     protected final UUID profileID;
     protected final String loginName;
 
-    private YggdrasilSession session;
+    /// Current game credentials; subclasses may replace them after scoped session renewal.
+    protected YggdrasilSession session;
 
     protected YggdrasilAccount(AccountID accountID, YggdrasilService service, String loginName, YggdrasilSession session) {
         super(accountID);

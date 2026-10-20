@@ -35,6 +35,7 @@ import javafx.scene.layout.VBox;
 import org.jackhuang.hmcl.auth.Account;
 import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorAccount;
 import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorServer;
+import org.jackhuang.hmcl.auth.authlibinjector.NomiAuthlibInjectorAccount;
 import org.jackhuang.hmcl.auth.microsoft.MicrosoftAccount;
 import org.jackhuang.hmcl.game.TexturesLoader;
 import org.jackhuang.hmcl.setting.Accounts;
@@ -203,15 +204,17 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
                 handler.reject("ID 须为 3 至 16 位字母、数字或下划线。");
                 return;
             }
-            var privateData = new JsonObject();
-            account.writePrivateData(privateData);
-            String token = privateData.get("accessToken").getAsString();
             var payload = new JsonObject();
             payload.addProperty("name", name);
             CompletableFuture.supplyAsync(() -> {
                 try {
-                    return NomiService.request("PATCH", "/api/v1/game/profiles/" + account.getProfileID() + "/name",
-                            payload, token);
+                    synchronized (account) {
+                        if (account instanceof NomiAuthlibInjectorAccount nomi) nomi.ensureGameSession();
+                        var privateData = new JsonObject();
+                        account.writePrivateData(privateData);
+                        return NomiService.request("PATCH", "/api/v1/game/profiles/" + account.getProfileID() + "/name",
+                                payload, privateData.get("accessToken").getAsString());
+                    }
                 } catch (Exception exception) {
                     throw new java.util.concurrent.CompletionException(exception);
                 }
@@ -224,10 +227,13 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
                 }
                 int index = Accounts.getAccounts().indexOf(account);
                 if (index >= 0) {
-                    var renamed = NomiService.accountFromSession(injector.getServer(), session, account.getAccountID());
-                    @Nullable Account selected = Accounts.getSelectedAccount();
-                    Accounts.getAccounts().set(index, renamed);
-                    if (account.equals(selected)) Accounts.setSelectedAccount(renamed);
+                    if (account instanceof NomiAuthlibInjectorAccount nomi) nomi.acceptProfileName(name);
+                    else {
+                        var renamed = NomiService.accountFromSession(injector.getServer(), session, account.getAccountID());
+                        @Nullable Account selected = Accounts.getSelectedAccount();
+                        Accounts.getAccounts().set(index, renamed);
+                        if (account.equals(selected)) Accounts.setSelectedAccount(renamed);
+                    }
                 }
                 Controllers.showToast("改名成功，账号 ID：" + name + "。请重新启动游戏。");
             }));

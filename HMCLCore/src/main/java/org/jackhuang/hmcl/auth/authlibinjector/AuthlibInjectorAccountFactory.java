@@ -99,6 +99,10 @@ public class AuthlibInjectorAccountFactory extends AccountFactory<AuthlibInjecto
             profileRepository.invalidate(selected.getId());
         }
 
+        if (privateData.has(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY)) {
+            String token = privateData.get(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY).getAsString();
+            return new NomiAuthlibInjectorAccount(accountID, server, downloader, loginName, session, token);
+        }
         return new AuthlibInjectorAccount(accountID, server, downloader, loginName, session);
     }
 }

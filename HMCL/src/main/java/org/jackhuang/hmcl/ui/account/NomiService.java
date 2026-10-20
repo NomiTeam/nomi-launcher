@@ -20,6 +20,7 @@ package org.jackhuang.hmcl.ui.account;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.jackhuang.hmcl.auth.Account;
+import org.jackhuang.hmcl.auth.authlibinjector.NomiAuthlibInjectorAccount;
 import org.jackhuang.hmcl.auth.AccountID;
 import org.jackhuang.hmcl.setting.Accounts;
 import org.jackhuang.hmcl.util.io.JarUtils;
@@ -76,6 +77,8 @@ public final class NomiService {
         privateData.addProperty("accessToken", game.get("accessToken").getAsString());
         privateData.addProperty("clientToken", game.get("clientToken").getAsString());
         privateData.addProperty("profileName", selected.get("name").getAsString());
+        if (session.has("refresh_token"))
+            privateData.add(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY, session.get("refresh_token"));
         var account = Accounts.getAccountFactoryByAuthlibInjectorServer(server).fromStorage(metadata, privateData);
         account.setPortable(true);
         return account;

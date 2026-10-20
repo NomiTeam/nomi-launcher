@@ -28,6 +28,7 @@ import javafx.scene.control.Skin;
 import javafx.scene.image.Image;
 import javafx.stage.FileChooser;
 import org.jackhuang.hmcl.auth.Account;
+import org.jackhuang.hmcl.auth.authlibinjector.NomiAuthlibInjectorAccount;
 import org.jackhuang.hmcl.auth.AuthenticationException;
 import org.jackhuang.hmcl.auth.ClassicAccount;
 import org.jackhuang.hmcl.auth.CredentialExpiredException;
@@ -182,16 +183,24 @@ public class AccountListItem extends RadioButton {
                 });
     }
 
+    /// Removes a writable account record and revokes its device refresh session when present.
     public void remove() {
         if (!Accounts.canRemoveAccount(account)) {
             Controllers.confirmBackupAndOverwrite(i18n("account.storage.read_only"), () -> {
                 Accounts.forceOverwriteAccountFiles(account);
-                Accounts.getAccounts().remove(account);
+                removeStoredAccount();
             });
             return;
         }
 
+        removeStoredAccount();
+    }
+
+    /// Deletes the local record immediately and revokes its remote credentials in the background.
+    private void removeStoredAccount() {
         Accounts.getAccounts().remove(account);
+        if (account instanceof NomiAuthlibInjectorAccount nomi)
+            Task.runAsync(nomi::revokeSession).start();
     }
 
     public Account getAccount() {

@@ -224,6 +224,9 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
     /// Revokes a session delivered after closure or when portable storage is read-only.
     private static void discardSession(JsonObject session) {
         try {
+            if (session.has("refresh_token"))
+                NomiService.request("DELETE", "/api/v1/sessions/refresh", null,
+                        session.get("refresh_token").getAsString());
             NomiService.request("POST", "/api/yggdrasil/authserver/invalidate", session.getAsJsonObject("game"), null);
             NomiService.request("DELETE", "/api/v1/sessions/current", null,
                     session.get("management_token").getAsString());
