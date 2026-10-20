@@ -400,7 +400,8 @@ public final class Accounts {
             Account finalSelected = selected;
             Schedulers.io().execute(() -> {
                 try {
-                    finalSelected.logIn();
+                    if (org.jackhuang.hmcl.ui.account.NomiService.permits(finalSelected))
+                        org.jackhuang.hmcl.ui.account.NomiService.logIn(finalSelected);
                 } catch (Throwable e) {
                     LOG.warning("Failed to log " + finalSelected + " in", e);
                 }
