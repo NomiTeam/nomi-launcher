@@ -117,6 +117,12 @@ class NomiServiceTest {
             }
             exchange.close();
         });
+        server.createContext("/api/yggdrasil/", exchange -> {
+            byte[] bytes = "{\"meta\":{\"serverName\":\"Test\"}}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
         server.createContext("/api/yggdrasil/authserver/validate", exchange -> {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             String token = JsonParser.parseString(body).getAsJsonObject().get("accessToken").getAsString();
@@ -334,6 +340,35 @@ class NomiServiceTest {
         account.writePrivateData(stored);
         assertEquals("wrong-profile", stored.get(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY).getAsString());
         assertEquals(uuid, account.getProfileID());
+    }
+
+    /// The actual login path returns only game credentials and never embeds the launcher refresh secret.
+    @Test
+    void loginRefreshKeepsLauncherSecretOutOfGameArguments() throws Exception {
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var original = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(server, refreshSession("expired-game", "launcher-refresh"));
+        var metadata = new JsonObject();
+        var privateData = new JsonObject();
+        original.writeMetadata(metadata);
+        original.writePrivateData(privateData);
+        var provider = new org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorArtifactProvider() {
+            /// Supplies a local artifact record without downloading anything.
+            public org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorArtifactInfo getArtifactInfo() {
+                return new org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorArtifactInfo(1, "test", Path.of("agent.jar"));
+            }
+            /// Makes the same artifact available for immediate lookups.
+            public java.util.Optional<org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorArtifactInfo> getArtifactInfoImmediately() {
+                return java.util.Optional.of(getArtifactInfo());
+            }
+        };
+        var account = new NomiAuthlibInjectorAccount(original.getAccountID(), server, provider, "Alice",
+                org.jackhuang.hmcl.auth.yggdrasil.YggdrasilSession.fromStorage(metadata, privateData), "launcher-refresh");
+        var auth = account.logIn();
+        assertEquals("renewed-game", auth.getAccessToken());
+        var args = auth.getLaunchArguments(new org.jackhuang.hmcl.game.LaunchOptions.Builder().create());
+        assertFalse(args.toString().contains("rotated-refresh"));
+        assertFalse(args.toString().contains("launcher-refresh"));
+        assertEquals(original.getProfileID(), account.getProfileID());
     }
 
 }
