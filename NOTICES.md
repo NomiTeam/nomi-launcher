@@ -17,7 +17,7 @@ Nomi Launcher 是由 NomiTeam 维护的 HMCL 修改版，不是 HMCL 官方发�
 
 ## 源码、依赖与无担保声明
 
-[本项目仓库](https://github.com/NomiTeam/nomi-launcher)提供对应源码和构建说明；每个 Release 同时提供与发布 tag 对应的源码包。你可以按适用许可证的条件复制、修改和再分发程序。
+[本项目仓库](https://github.com/NomiTeam/nomi-launcher)提供对应源码和构建说明；Release 页面使用 GitHub 按发布 tag 自动提供的源码下载入口。你可以按适用许可证的条件复制、修改和再分发程序。
 
 关于页保留依赖列表、原作者版权及许可证入口。上游鸣谢资料保存在源码的 `HMCL/src/main/resources/assets/about/thanks.json` 中。第三方组件及资源的版权和许可归各自权利人所有，原有许可与声明继续适用，不统一改署为 NomiTeam。
 
