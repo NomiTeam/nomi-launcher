@@ -19,6 +19,7 @@ package org.jackhuang.hmcl.ui.main;
 
 import com.google.gson.*;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TitledPane;
 import javafx.scene.image.Image;
 import javafx.scene.layout.VBox;
 import org.jackhuang.hmcl.Metadata;
@@ -61,11 +62,13 @@ public final class AboutPage extends SpinnerPane {
             var upstream = LineButton.createExternalLinkButton("https://github.com/HMCL-dev/HMCL");
             upstream.setLargeTitle(true);
             upstream.setTitle("上游项目与版权归属");
-            upstream.setSubtitle("基于 HMCL，保留原作者及贡献者的版权、许可证和致谢。");
+            upstream.setSubtitle("基于 HMCL 的定制版本");
             about.getContent().setAll(launcher, upstream);
         }
 
         ComponentList thanks = loadIconedTwoLineList("/assets/about/thanks.json");
+        var upstreamThanks = new TitledPane(i18n("about.thanks_to"), thanks);
+        upstreamThanks.setExpanded(false);
 
         ComponentList deps = loadIconedTwoLineList("/assets/about/deps.json");
 
@@ -92,8 +95,7 @@ public final class AboutPage extends SpinnerPane {
         content.getChildren().setAll(
                 ComponentList.createComponentListTitle(i18n("about")),
                 about,
-                ComponentList.createComponentListTitle(i18n("about.thanks_to")),
-                thanks,
+                upstreamThanks,
                 ComponentList.createComponentListTitle(i18n("about.dependency")),
                 deps,
                 ComponentList.createComponentListTitle(i18n("about.legal")),
