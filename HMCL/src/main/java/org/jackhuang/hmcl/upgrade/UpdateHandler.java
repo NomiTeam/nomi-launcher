@@ -248,9 +248,10 @@ public final class UpdateHandler {
         }).collect(Collectors.joining(" "));
     }
 
-    private static Optional<Path> tryRename(Path path, String newVersion) {
+    /// Updates standard Nomi or legacy launcher filenames while preserving custom user names.
+    static Optional<Path> tryRename(Path path, String newVersion) {
         String filename = path.getFileName().toString();
-        Matcher matcher = Pattern.compile("^(?<prefix>[hH][mM][cC][lL][.-])(?<version>\\d+(?:\\.\\d+)*)(?<suffix>\\.[^.]+)$").matcher(filename);
+        Matcher matcher = Pattern.compile("^(?<prefix>(?:NomiLauncher|[hH][mM][cC][lL])[.-])(?<version>\\d+(?:\\.\\d+)*(?:-(?:alpha|beta|rc)\\.\\d+)?)(?<suffix>\\.[^.]+)$").matcher(filename);
         if (matcher.find()) {
             String newFilename = matcher.group("prefix") + newVersion + matcher.group("suffix");
             if (!newFilename.equals(filename)) {

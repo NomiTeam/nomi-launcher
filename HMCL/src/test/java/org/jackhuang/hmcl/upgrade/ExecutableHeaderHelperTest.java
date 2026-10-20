@@ -36,4 +36,25 @@ class ExecutableHeaderHelperTest {
         ExecutableHeaderHelper.copyWithHeader(next, restored);
         assertArrayEquals(Files.readAllBytes(jar), Files.readAllBytes(restored));
     }
+    /// A malformed download cannot truncate or replace the existing launcher.
+    @Test void failedReplacementPreservesOriginal() throws Exception {
+        Path original = directory.resolve("NomiLauncher.exe");
+        byte[] content = "existing launcher".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Files.write(original, content);
+        Path invalid = directory.resolve("invalid.jar");
+        Files.writeString(invalid, "not a ZIP archive");
+        assertThrows(java.io.IOException.class, () -> ExecutableHeaderHelper.copyWithHeader(invalid, original));
+        assertArrayEquals(content, Files.readAllBytes(original));
+        try (var files = Files.list(directory)) {
+            assertFalse(files.anyMatch(path -> path.getFileName().toString().startsWith(".nomi-update-")));
+        }
+    }
+
+    /// Standard release names advance with the version, including prerelease filenames.
+    @Test void updatesStandardNamesButKeepsCustomNames() {
+        assertEquals(java.util.Optional.of(Path.of("NomiLauncher-1.0.1.exe")), UpdateHandler.tryRename(Path.of("NomiLauncher-1.0.0.exe"), "1.0.1"));
+        assertEquals(java.util.Optional.of(Path.of("NomiLauncher-1.1.0.jar")), UpdateHandler.tryRename(Path.of("NomiLauncher-1.1.0-rc.1.jar"), "1.1.0"));
+        assertEquals(java.util.Optional.empty(), UpdateHandler.tryRename(Path.of("MyLauncher.exe"), "1.0.1"));
+    }
+
 }

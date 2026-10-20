@@ -101,24 +101,46 @@ final class ExecutableHeaderHelper {
         }
     }
 
-    /**
-     * Copies the executable and appends the header according to the suffix.
-     */
+    /// Builds a complete replacement beside the target before swapping it into place.
+    /// Invalid archives and failed writes leave the existing launcher untouched.
     public static void copyWithHeader(Path from, Path to) throws IOException {
-        try (
-                FileChannel in = FileChannel.open(from, READ);
-                FileChannel out = FileChannel.open(to, CREATE, WRITE, TRUNCATE_EXISTING);
-                ZipFile zip = new ZipFile(from.toFile())
-        ) {
-            Optional<String> suffix = getSuffix(to);
-            if (suffix.isPresent()) {
-                Optional<byte[]> header = readHeader(zip, suffix.get());
-                if (header.isPresent()) {
-                    out.write(ByteBuffer.wrap(header.get()));
+        Path target = to.toAbsolutePath();
+        Path temporary = java.nio.file.Files.createTempFile(target.getParent(), ".nomi-update-", ".tmp");
+        try {
+            try (FileChannel in = FileChannel.open(from, READ);
+                    FileChannel out = FileChannel.open(temporary, WRITE, TRUNCATE_EXISTING);
+                    ZipFile zip = new ZipFile(from.toFile())) {
+                Optional<String> suffix = getSuffix(target);
+                if (suffix.isPresent()) {
+                    Optional<byte[]> header = readHeader(zip, suffix.get());
+                    if (header.isPresent()) {
+                        ByteBuffer buffer = ByteBuffer.wrap(header.get());
+                        while (buffer.hasRemaining()) out.write(buffer);
+                    }
                 }
+                long offset = detectHeaderLength(zip, in);
+                ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
+                in.position(offset);
+                while (in.read(buffer) != -1) {
+                    buffer.flip();
+                    while (buffer.hasRemaining()) out.write(buffer);
+                    buffer.clear();
+                }
+                out.force(true);
             }
-
-            in.transferTo(detectHeaderLength(zip, in), Long.MAX_VALUE, out);
+            // Preserve executable bits for existing Unix launcher scripts as well as JAR permissions.
+            if (java.nio.file.Files.exists(target)
+                    && java.nio.file.Files.getFileAttributeView(target, java.nio.file.attribute.PosixFileAttributeView.class) != null) {
+                java.nio.file.Files.setPosixFilePermissions(temporary, java.nio.file.Files.getPosixFilePermissions(target));
+            }
+            try {
+                java.nio.file.Files.move(temporary, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException exception) {
+                java.nio.file.Files.move(temporary, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            java.nio.file.Files.deleteIfExists(temporary);
         }
     }
 }
