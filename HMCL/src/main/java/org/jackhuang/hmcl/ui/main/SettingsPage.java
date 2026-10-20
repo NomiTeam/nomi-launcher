@@ -69,6 +69,7 @@ public final class SettingsPage extends ScrollPane {
     @SuppressWarnings("FieldCanBeLocal")
     private final InvalidationListener updateListener;
 
+    /// Builds launcher preferences with a manual Nomi release link in place of upstream updates.
     public SettingsPage() {
         this.setFitToWidth(true);
 
@@ -130,6 +131,8 @@ public final class SettingsPage extends ScrollPane {
                                     String msg = t.getClass().getSimpleName() + ": " + t.getLocalizedMessage();
                                     lblUpdateSubProperty.set(i18n("update.check_failed", msg));
                                 }
+                            } else if (!UpdateChecker.ENABLED) {
+                                lblUpdateSubProperty.set("请从 Nomi Launcher 发布页手动下载更新");
                             } else {
                                 lblUpdateSubProperty.set(i18n("update.latest"));
                             }
@@ -141,7 +144,13 @@ public final class SettingsPage extends ScrollPane {
                         updateListener.invalidated(null);
                     }
 
+                    updatePane.setDisable(!UpdateChecker.ENABLED);
                     updatePaneList.getContent().add(updatePane);
+                    if (!UpdateChecker.ENABLED) {
+                        var releases = new JFXButton("打开 Nomi 发布页");
+                        releases.setOnAction(event -> FXUtils.openLink(Metadata.MANUAL_UPDATE_URL));
+                        updatePaneList.getContent().add(releases);
+                    }
                 }
 
                 {
@@ -156,6 +165,7 @@ public final class SettingsPage extends ScrollPane {
                     updateChannel.addListener(checkUpdateListener);
                     previewPane.selectedProperty().addListener(checkUpdateListener);
 
+                    previewPane.setDisable(!UpdateChecker.ENABLED);
                     updatePaneList.getContent().add(previewPane);
                 }
 

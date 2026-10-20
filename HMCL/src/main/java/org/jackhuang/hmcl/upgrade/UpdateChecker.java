@@ -57,6 +57,10 @@ public final class UpdateChecker {
     private static final ReadOnlyBooleanWrapper checkingUpdate = new ReadOnlyBooleanWrapper(false);
     private static final ReadOnlyObjectWrapper<@Nullable Throwable> error = new ReadOnlyObjectWrapper<>();
 
+    /// Nomi currently distributes manual releases; upstream update checks remain disabled.
+    public static final boolean ENABLED = false;
+
+    /// Initializes update checking only when a Nomi update service is available.
     public static void init() {
         requestCheckUpdate(UpdateChannel.getChannel(), settings().acceptPreviewUpdateProperty().get());
     }
@@ -107,7 +111,9 @@ public final class UpdateChecker {
                 version.contains("SNAPSHOT"); // eg. 3.5.SNAPSHOT
     }
 
+    /// Ignores upstream update requests while this fork uses manual distribution.
     public static void requestCheckUpdate(UpdateChannel channel, boolean preview) {
+        if (!ENABLED) return;
         Platform.runLater(() -> {
             if (isCheckingUpdate())
                 return;

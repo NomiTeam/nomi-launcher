@@ -1038,10 +1038,10 @@ public sealed abstract class GameSettings extends ObservableSetting {
             };
         }
 
-        /// Returns the explicit quick play target, defaulting unset instances to the Nomi server.
+        /// Returns the inherited quick play target, respecting an explicit disabled selection.
         public @Nullable QuickPlayOption getQuickPlayOption() {
             return switch (getInheritable(GameSettings::quickPlayProperty)) {
-                case NONE -> StringUtils.isBlank(Metadata.DEFAULT_SERVER) ? null : new QuickPlayOption.MultiPlayer(Metadata.DEFAULT_SERVER);
+                case NONE -> null;
                 case MULTIPLAYER -> {
                     String server = getInheritable(GameSettings::quickPlayMultiplayerProperty);
                     String target = StringUtils.isBlank(server) ? Metadata.DEFAULT_SERVER : server;
