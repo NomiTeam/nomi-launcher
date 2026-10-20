@@ -75,6 +75,7 @@ public class AuthlibInjectorAccountFactory extends AccountFactory<AuthlibInjecto
         return fromStorage(metadata, privateData, downloader, server);
     }
 
+    /// Restores private launcher refresh sessions while retaining compatibility with ordinary external accounts.
     static AuthlibInjectorAccount fromStorage(
             JsonObject metadata,
             JsonObject privateData,
