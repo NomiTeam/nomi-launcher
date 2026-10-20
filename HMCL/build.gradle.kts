@@ -211,6 +211,7 @@ val createPropertiesFile = tasks.register("createPropertiesFile") {
 }
 
 tasks.jar {
+    archiveBaseName.set("NomiLauncher")
     enabled = false
     dependsOn(tasks["shadowJar"])
 }
@@ -218,6 +219,7 @@ tasks.jar {
 val jarPath = tasks.jar.get().archiveFile.get().asFile
 
 tasks.shadowJar {
+    archiveBaseName.set("NomiLauncher")
     dependsOn(createPropertiesFile)
 
     archiveClassifier.set(null as String?)

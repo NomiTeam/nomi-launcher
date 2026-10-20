@@ -54,8 +54,8 @@ jobs:
       - name: Package release assets
         run: |
           mkdir -p release
-          cp "HMCL/build/libs/HMCL-$NOMI_VERSION.jar" "release/NomiLauncher-$NOMI_VERSION.jar"
-          cp "HMCL/build/libs/HMCL-$NOMI_VERSION.exe" "release/NomiLauncher-$NOMI_VERSION.exe"
+          cp "HMCL/build/libs/NomiLauncher-$NOMI_VERSION.jar" release/
+          cp "HMCL/build/libs/NomiLauncher-$NOMI_VERSION.exe" release/
           git archive --format=zip --output="release/NomiLauncher-$NOMI_VERSION-sources.zip" HEAD
           cd release
           sha256sum NomiLauncher-* > SHA256SUMS

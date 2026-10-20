@@ -21,7 +21,7 @@
 
 ```text
 gradlew.bat :HMCL:makeExecutables -PnomiApiBase=https://auth.example.com -PnomiDefaultServer=play.example.com
-java -jar HMCL/build/libs/HMCL-3.17.SNAPSHOT.jar
+java -jar HMCL/build/libs/NomiLauncher-3.17.SNAPSHOT.jar
 ```
 
 Linux/macOS 使用 `./gradlew`。该任务生成 JAR、Windows EXE 和启动脚本，产物位于 `HMCL/build/libs/`；Windows 可直接运行 EXE，文件名以实际构建结果为准。
