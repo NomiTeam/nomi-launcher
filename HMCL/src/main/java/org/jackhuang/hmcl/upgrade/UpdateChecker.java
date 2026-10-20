@@ -50,7 +50,7 @@ public final class UpdateChecker {
 
     /// Initializes update checking only when a Nomi update service is available.
     public static void init() {
-        requestCheckUpdate(UpdateChannel.getChannel(), settings().acceptPreviewUpdateProperty().get());
+        requestCheckUpdate(UpdateChannel.STABLE, false);
     }
 
     public static @Nullable RemoteVersion getLatestVersion() {
@@ -81,9 +81,9 @@ public final class UpdateChecker {
         return error.getReadOnlyProperty();
     }
 
-    /// Fetches Nomi releases; signed payload verification remains mandatory when installing.
+    /// Fetches only stable Nomi releases, ignoring legacy preview preferences.
     private static @Nullable RemoteVersion checkUpdate(UpdateChannel channel, boolean preview) throws IOException {
-        return NomiReleaseService.fetch(preview);
+        return NomiReleaseService.fetch(false);
     }
 
     /// Checks GitHub Releases asynchronously and reports transport failures without replacing the launcher.

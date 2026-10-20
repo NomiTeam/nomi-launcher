@@ -85,7 +85,7 @@ public final class SettingsPage extends ScrollPane {
                 updatePane.setTitle("Nomi Launcher 更新");
                 var check = new JFXButton("检查更新");
                 check.disableProperty().bind(UpdateChecker.checkingUpdateProperty());
-                check.setOnAction(event -> UpdateChecker.requestCheckUpdate(UpdateChannel.STABLE, settings().acceptPreviewUpdateProperty().get()));
+                check.setOnAction(event -> UpdateChecker.requestCheckUpdate(UpdateChannel.STABLE, false));
                 var install = new JFXButton("下载并更新");
                 install.setOnAction(event -> onUpdate());
                 install.visibleProperty().bind(UpdateChecker.outdatedProperty());
@@ -112,16 +112,6 @@ public final class SettingsPage extends ScrollPane {
                 var releases = LineButton.createExternalLinkButton(Metadata.MANUAL_UPDATE_URL);
                 releases.setTitle("打开 Nomi Launcher 发布页");
                 updatePaneList.getContent().add(releases);
-                {
-                    LineToggleButton previewPane = new LineToggleButton();
-                    previewPane.setTitle(i18n("update.preview"));
-                    previewPane.setSubtitle(i18n("update.preview.subtitle"));
-                    previewPane.selectedProperty().bindBidirectional(settings().acceptPreviewUpdateProperty());
-                    previewPane.selectedProperty().addListener((observable, oldValue, value) ->
-                            UpdateChecker.requestCheckUpdate(UpdateChannel.STABLE, value));
-                    updatePaneList.getContent().add(previewPane);
-                }
-
                 {
                     LineToggleButton disableAutoShowUpdateDialogPane = new LineToggleButton();
                     disableAutoShowUpdateDialogPane.setTitle(i18n("update.disable_auto_show_update_dialog"));

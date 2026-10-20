@@ -30,7 +30,7 @@ Linux/macOS 使用 `./gradlew`。该任务生成 JAR、Windows EXE 和启动脚�
 
 运行时可用 `-Dnomi.defaultServer=地址` 覆盖默认进服目标，传空值关闭；本机调试可用 `-Dnomi.api.base=http://127.0.0.1:8000` 覆盖认证地址。这些参数放在 `-jar` 前。
 
-启动时自动检查本仓库的 GitHub Releases，发现更新后可在界面确认下载、校验并重启；EXE 更新后仍保留 EXE 格式。只接受匹配 Nomi 公钥的签名构建，并校验 GitHub 提供的 SHA-256。预发布版本需要用户主动开启。
+启动时自动检查本仓库的 GitHub Releases，发现更新后可在界面确认下载、校验并重启；EXE 更新后仍保留 EXE 格式。只接受匹配 Nomi 公钥的签名构建，并校验 GitHub 提供的 SHA-256。更新检查只接收正式版本，不接收预发布版本。
 
 ## 发布
 
