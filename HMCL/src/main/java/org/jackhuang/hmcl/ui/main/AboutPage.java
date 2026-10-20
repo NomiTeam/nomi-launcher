@@ -55,7 +55,6 @@ public final class AboutPage extends SpinnerPane {
         {
             var launcher = LineButton.createExternalLinkButton("https://github.com/NomiTeam/nomi-launcher");
             launcher.setLargeTitle(true);
-            launcher.setLeading(FXUtils.newBuiltinImage("/assets/img/icon.png"));
             launcher.setTitle(Metadata.FULL_NAME);
             launcher.setSubtitle(Metadata.VERSION);
 
