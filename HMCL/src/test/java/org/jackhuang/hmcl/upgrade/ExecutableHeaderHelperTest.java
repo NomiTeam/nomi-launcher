@@ -32,8 +32,17 @@ class ExecutableHeaderHelperTest {
         ExecutableHeaderHelper.copyWithHeader(exe, next);
         assertArrayEquals(Files.readAllBytes(exe), Files.readAllBytes(next));
         try (var zip = new ZipFile(next.toFile())) { assertNotNull(zip.getEntry("payload")); }
+        // An updater can still encounter a ZIP handle belonging to the previous launcher process.
+        try (var held = new ZipFile(next.toFile())) {
+            ExecutableHeaderHelper.copyWithHeader(jar, next);
+        }
+        assertArrayEquals(Files.readAllBytes(exe), Files.readAllBytes(next));
         Path restored = directory.resolve("updated.jar");
         ExecutableHeaderHelper.copyWithHeader(next, restored);
+        assertArrayEquals(Files.readAllBytes(jar), Files.readAllBytes(restored));
+        try (var held = new ZipFile(restored.toFile())) {
+            ExecutableHeaderHelper.copyWithHeader(jar, restored);
+        }
         assertArrayEquals(Files.readAllBytes(jar), Files.readAllBytes(restored));
     }
     /// A malformed download cannot truncate or replace the existing launcher.

@@ -101,8 +101,8 @@ final class ExecutableHeaderHelper {
         }
     }
 
-    /// Builds a complete replacement beside the target before swapping it into place.
-    /// Invalid archives and failed writes leave the existing launcher untouched.
+    /// Prepares a complete replacement before touching the installed launcher.
+    /// Windows uses upstream-compatible in-place writes because open ZIP handles can forbid renames.
     public static void copyWithHeader(Path from, Path to) throws IOException {
         Path target = to.toAbsolutePath();
         Path temporary = java.nio.file.Files.createTempFile(target.getParent(), ".nomi-update-", ".tmp");
@@ -133,6 +133,11 @@ final class ExecutableHeaderHelper {
                     && java.nio.file.Files.getFileAttributeView(target, java.nio.file.attribute.PosixFileAttributeView.class) != null) {
                 java.nio.file.Files.setPosixFilePermissions(temporary, java.nio.file.Files.getPosixFilePermissions(target));
             }
+            if (org.jackhuang.hmcl.util.platform.OperatingSystem.CURRENT_OS
+                    == org.jackhuang.hmcl.util.platform.OperatingSystem.WINDOWS && java.nio.file.Files.exists(target)) {
+                replaceWindowsLauncher(temporary, target);
+                return;
+            }
             try {
                 java.nio.file.Files.move(temporary, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
@@ -141,6 +146,42 @@ final class ExecutableHeaderHelper {
             }
         } finally {
             java.nio.file.Files.deleteIfExists(temporary);
+        }
+    }
+
+    /// Keeps a recoverable copy while writing through the existing Windows file identity, as upstream does.
+    private static void replaceWindowsLauncher(Path prepared, Path target) throws IOException {
+        Path backup = java.nio.file.Files.createTempFile(target.getParent(), ".nomi-backup-", ".tmp");
+        boolean retainBackup = false;
+        try {
+            java.nio.file.Files.copy(target, backup, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            try {
+                overwriteExistingFile(prepared, target);
+            } catch (IOException failure) {
+                try { overwriteExistingFile(backup, target); }
+                catch (IOException recoveryFailure) {
+                    retainBackup = true;
+                    failure.addSuppressed(new IOException("Original launcher backup retained at " + backup, recoveryFailure));
+                }
+                throw failure;
+            }
+        } finally {
+            if (!retainBackup) java.nio.file.Files.deleteIfExists(backup);
+        }
+    }
+
+    /// Writes to an existing file without deleting or renaming the ZIP-backed file held by a JVM.
+    private static void overwriteExistingFile(Path source, Path target) throws IOException {
+        try (FileChannel in = FileChannel.open(source, READ);
+                FileChannel out = FileChannel.open(target, WRITE)) {
+            out.truncate(0);
+            ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
+            while (in.read(buffer) != -1) {
+                buffer.flip();
+                while (buffer.hasRemaining()) out.write(buffer);
+                buffer.clear();
+            }
+            out.force(true);
         }
     }
 }
