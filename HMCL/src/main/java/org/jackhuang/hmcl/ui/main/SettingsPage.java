@@ -69,7 +69,7 @@ public final class SettingsPage extends ScrollPane {
     @SuppressWarnings("FieldCanBeLocal")
     private final InvalidationListener updateListener;
 
-    /// Builds launcher preferences with a manual Nomi release link in place of upstream updates.
+    /// Builds launcher preferences with active Nomi release checks and update controls.
     public SettingsPage() {
         this.setFitToWidth(true);
 
@@ -81,91 +81,44 @@ public final class SettingsPage extends ScrollPane {
         {
             ComponentList updatePaneList = new ComponentList();
             {
-                ObjectProperty<UpdateChannel> updateChannel;
-                {
-
-                    JFXButton updateButton = FXUtils.newToggleButton4(SVG.UPDATE, 20);
-                    updateButton.setOnAction(e -> onUpdate());
-                    updateButton.setPadding(Insets.EMPTY);
-                    FXUtils.installFastTooltip(updateButton, i18n("update.tooltip"));
-
-                    var updatePane = new LineSelectButton<UpdateChannel>() {
-
-                        {
-                            getStyleClass().add("update-pane");
-                            setNode(IDX_TRAILING, updateButton);
-                        }
-
-                        @Override
-                        protected int getTrailingTextIndex() {
-                            return LineComponent.IDX_TRAILING + 1;
-                        }
-                    };
-                    updateChannel = updatePane.valueProperty();
-                    updatePane.setTitle(i18n("update"));
-                    updatePane.setValue(UpdateChannel.getChannel());
-
-                    updatePane.setNullSafeConverter(channel -> i18n("update.channel." + channel.channelName));
-                    updatePane.setItems(List.of(UpdateChannel.STABLE, UpdateChannel.DEVELOPMENT));
-                    updatePane.setDescriptionConverter(channel -> i18n("update.note." + channel.channelName));
-
-                    final StringProperty lblUpdateSubProperty = updatePane.subtitleProperty();
-
-                    {
-                        updateListener = any -> {
-                            boolean outdated = UpdateChecker.isOutdated();
-
-                            updateButton.setVisible(outdated);
-                            updateButton.setManaged(outdated);
-                            updatePane.pseudoClassStateChanged(PseudoClass.getPseudoClass("active"), outdated);
-
-                            if (outdated) {
-                                lblUpdateSubProperty.set(i18n("update.newest_version", UpdateChecker.getLatestVersion().version()));
-                            } else if (UpdateChecker.isCheckingUpdate()) {
-                                lblUpdateSubProperty.set(i18n("update.checking"));
-                            } else if (UpdateChecker.errorProperty().get() != null) {
-                                Throwable t = UpdateChecker.errorProperty().get();
-                                if (t instanceof SelfVerificationException) {
-                                    lblUpdateSubProperty.set(i18n("update.unverified"));
-                                } else {
-                                    String msg = t.getClass().getSimpleName() + ": " + t.getLocalizedMessage();
-                                    lblUpdateSubProperty.set(i18n("update.check_failed", msg));
-                                }
-                            } else if (!UpdateChecker.ENABLED) {
-                                lblUpdateSubProperty.set("请从 Nomi Launcher 发布页手动下载更新");
-                            } else {
-                                lblUpdateSubProperty.set(i18n("update.latest"));
-                            }
-                        };
-                        UpdateChecker.latestVersionProperty().addListener(new WeakInvalidationListener(updateListener));
-                        UpdateChecker.outdatedProperty().addListener(new WeakInvalidationListener(updateListener));
-                        UpdateChecker.checkingUpdateProperty().addListener(new WeakInvalidationListener(updateListener));
-                        UpdateChecker.errorProperty().addListener(new WeakInvalidationListener(updateListener));
-                        updateListener.invalidated(null);
-                    }
-
-                    updatePane.setDisable(!UpdateChecker.ENABLED);
-                    updatePaneList.getContent().add(updatePane);
-                    if (!UpdateChecker.ENABLED) {
-                        var releases = new JFXButton("打开 Nomi 发布页");
-                        releases.setOnAction(event -> FXUtils.openLink(Metadata.MANUAL_UPDATE_URL));
-                        updatePaneList.getContent().add(releases);
-                    }
-                }
-
+                var updatePane = new LineButton();
+                updatePane.setTitle("Nomi Launcher 更新");
+                var check = new JFXButton("检查更新");
+                check.disableProperty().bind(UpdateChecker.checkingUpdateProperty());
+                check.setOnAction(event -> UpdateChecker.requestCheckUpdate(UpdateChannel.STABLE, settings().acceptPreviewUpdateProperty().get()));
+                var install = new JFXButton("下载并更新");
+                install.setOnAction(event -> onUpdate());
+                install.visibleProperty().bind(UpdateChecker.outdatedProperty());
+                install.managedProperty().bind(install.visibleProperty());
+                var actions = new HBox(8, check, install);
+                actions.setAlignment(Pos.CENTER_RIGHT);
+                updatePane.setTrailingIcon(actions);
+                updatePane.setOnAction(event -> check.fire());
+                updateListener = any -> {
+                    if (UpdateChecker.isCheckingUpdate()) updatePane.setSubtitle("正在检查 Nomi Launcher 更新……");
+                    else if (UpdateChecker.errorProperty().get() != null)
+                        updatePane.setSubtitle("检查更新失败，请稍后重试或打开发布页。");
+                    else if (UpdateChecker.isOutdated())
+                        updatePane.setSubtitle("可更新至 " + UpdateChecker.getLatestVersion().version());
+                    else if (UpdateChecker.getLatestVersion() == null)
+                        updatePane.setSubtitle("当前版本：" + Metadata.VERSION + "，暂无可用发布版本");
+                    else updatePane.setSubtitle("当前版本：" + Metadata.VERSION + "，已是最新版本");
+                };
+                UpdateChecker.latestVersionProperty().addListener(new WeakInvalidationListener(updateListener));
+                UpdateChecker.checkingUpdateProperty().addListener(new WeakInvalidationListener(updateListener));
+                UpdateChecker.errorProperty().addListener(new WeakInvalidationListener(updateListener));
+                updateListener.invalidated(null);
+                updatePaneList.getContent().add(updatePane);
+                var releases = LineButton.createExternalLinkButton(Metadata.MANUAL_UPDATE_URL);
+                releases.setTitle("打开 Nomi Launcher 发布页");
+                updatePaneList.getContent().add(releases);
                 {
                     LineToggleButton previewPane = new LineToggleButton();
                     previewPane.setTitle(i18n("update.preview"));
                     previewPane.setSubtitle(i18n("update.preview.subtitle"));
                     previewPane.selectedProperty().bindBidirectional(settings().acceptPreviewUpdateProperty());
-
-                    InvalidationListener checkUpdateListener = e -> {
-                        UpdateChecker.requestCheckUpdate(updateChannel.get(), previewPane.isSelected());
-                    };
-                    updateChannel.addListener(checkUpdateListener);
-                    previewPane.selectedProperty().addListener(checkUpdateListener);
-
-                    previewPane.setDisable(!UpdateChecker.ENABLED);
+                    previewPane.selectedProperty().addListener((observable, oldValue, value) ->
+                            UpdateChecker.requestCheckUpdate(UpdateChannel.STABLE, value));
                     updatePaneList.getContent().add(previewPane);
                 }
 
