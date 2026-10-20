@@ -34,7 +34,7 @@ Linux/macOS 使用 `./gradlew`。该任务生成 JAR、Windows EXE 和启动脚�
 
 ## 发布
 
-推送 `v1.0.0` 这类 tag，GitHub Actions 自动构建并发布 EXE、JAR 与校验值；源码使用 GitHub 按 tag 自动提供的下载入口。`v1.1.0-rc.1`（也支持 alpha/beta）标记为预发布。先配置仓库 Secrets：`NOMI_SIGNING_KEY_BASE64`（匹配仓库公钥的 PKCS#8 DER 私钥，以 Base64 编码）、`NOMI_API_BASE`、可选的 `NOMI_DEFAULT_SERVER`。私钥必须妥善备份，不能提交仓库。
+推送 `v1.0.0` 这类 tag，GitHub Actions 自动构建并发布 EXE 和 JAR；源码使用 GitHub 按 tag 自动提供的下载入口。`v1.1.0-rc.1`（也支持 alpha/beta）标记为预发布。先配置仓库 Secrets：`NOMI_SIGNING_KEY_BASE64`（匹配仓库公钥的 PKCS#8 DER 私钥，以 Base64 编码）、`NOMI_API_BASE`、可选的 `NOMI_DEFAULT_SERVER`。私钥必须妥善备份，不能提交仓库。
 
 本地发布构建增加 `-PnomiVersion=1.0.0`，并将 `NOMI_SIGNATURE_KEY` 指向同一私钥文件。未签名的开发构建不能安装在线更新。旧版没有此功能，需要手动升级到支持自动更新的版本一次。
 
