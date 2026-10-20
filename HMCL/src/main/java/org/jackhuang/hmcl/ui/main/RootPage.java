@@ -164,29 +164,6 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                 FXUtils.prepareOnMouseEnter(launcherSettingsItem, Controllers::prepareSettingsPage);
             }
 
-            // sixth item in left sidebar
-            AdvancedListItem terracottaItem = new AdvancedListItem();
-            terracottaItem.setLeftIcon(SVG.GRAPH2);
-            terracottaItem.setTitle(i18n("terracotta"));
-            terracottaItem.setOnAction(e -> {
-                if (TerracottaMetadata.PROVIDER != null) {
-                    Controllers.navigate(Controllers.getTerracottaPage());
-                } else {
-                    String message;
-                    if (Architecture.SYSTEM_ARCH.getBits() == Bits.BIT_32)
-                        message = i18n("terracotta.unsupported.arch.32bit");
-                    else if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS
-                            && !OperatingSystem.SYSTEM_VERSION.isAtLeast(OSVersion.WINDOWS_10))
-                        message = i18n("terracotta.unsupported.os.windows.old");
-                    else if (Platform.SYSTEM_PLATFORM.equals(OperatingSystem.LINUX, Architecture.LOONGARCH64_OW))
-                        message = i18n("terracotta.unsupported.arch.loongarch64_ow");
-                    else
-                        message = i18n("terracotta.unsupported");
-
-                    Controllers.dialog(message, null, MessageDialogPane.MessageType.WARNING);
-                }
-            });
-
             // the left sidebar
             AdvancedListBox sideBar = new AdvancedListBox()
                     .startCategory(i18n("account").toUpperCase(Locale.ROOT))
@@ -196,12 +173,7 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                     .add(gameItem)
                     .add(downloadItem)
                     .startCategory(i18n("settings.launcher.general").toUpperCase(Locale.ROOT))
-                    .add(launcherSettingsItem)
-                    .add(terracottaItem)
-                    .addNavigationDrawerItem(i18n("contact.chat"), SVG.CHAT, () -> {
-                        Controllers.getSettingsPage().showFeedback();
-                        Controllers.navigate(Controllers.getSettingsPage());
-                    });
+                    .add(launcherSettingsItem);
 
             // the root page, with the sidebar in left, navigator in center.
             setLeft(sideBar);

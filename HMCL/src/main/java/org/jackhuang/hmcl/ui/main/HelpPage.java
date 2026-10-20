@@ -17,81 +17,38 @@
  */
 package org.jackhuang.hmcl.ui.main;
 
-import com.google.gson.annotations.SerializedName;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.VBox;
-import org.jackhuang.hmcl.Metadata;
-import org.jackhuang.hmcl.task.Schedulers;
-import org.jackhuang.hmcl.task.Task;
 import org.jackhuang.hmcl.ui.FXUtils;
 import org.jackhuang.hmcl.ui.construct.ComponentList;
 import org.jackhuang.hmcl.ui.construct.LineButton;
 import org.jackhuang.hmcl.ui.construct.SpinnerPane;
-import org.jackhuang.hmcl.util.gson.JsonSerializable;
-import org.jackhuang.hmcl.util.io.HttpRequest;
+import org.jetbrains.annotations.NotNullByDefault;
 
-import java.util.List;
-
-import static org.jackhuang.hmcl.util.gson.JsonUtils.listTypeOf;
-import static org.jackhuang.hmcl.util.i18n.I18n.i18n;
-
-public class HelpPage extends SpinnerPane {
-
-    private final VBox content;
-
+/// Local Nomi usage instructions without fetching upstream promotional content.
+@NotNullByDefault
+public final class HelpPage extends SpinnerPane {
+    /// Builds offline help and a link to the Nomi project documentation.
     public HelpPage() {
-        content = new VBox();
+        var content = new VBox(12);
         content.getStyleClass().add("spinner-pane-content");
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        FXUtils.smoothScrolling(scrollPane);
-        setContent(scrollPane);
-
-        var docPane = LineButton.createExternalLinkButton(Metadata.DOCS_URL);
-        docPane.setLargeTitle(true);
-        docPane.setTitle(i18n("help.doc"));
-        docPane.setSubtitle(i18n("help.detail"));
-
-        ComponentList doc = new ComponentList();
-        doc.getContent().setAll(docPane);
-        content.getChildren().add(doc);
-
-        loadHelp();
-    }
-
-    private void loadHelp() {
-        showSpinner();
-        Task.supplyAsync(() -> HttpRequest.GET(Metadata.DOCS_URL + "/index.json").getJson(listTypeOf(HelpCategory.class)))
-                .thenAcceptAsync(Schedulers.javafx(), helpCategories -> {
-                    for (HelpCategory category : helpCategories) {
-                        ComponentList categoryPane = new ComponentList();
-
-                        for (Help help : category.items()) {
-                            var item = LineButton.createExternalLinkButton(help.url());
-                            item.setLargeTitle(true);
-                            item.setTitle(help.title());
-                            item.setSubtitle(help.subtitle());
-
-                            categoryPane.getContent().add(item);
-                        }
-
-                        content.getChildren().add(ComponentList.createComponentListTitle(category.title()));
-                        content.getChildren().add(categoryPane);
-                    }
-                    hideSpinner();
-                }).start();
-    }
-
-    @JsonSerializable
-    private record HelpCategory(
-            @SerializedName("title") String title,
-            @SerializedName("items") List<Help> items) {
-    }
-
-    @JsonSerializable
-    private record Help(
-            @SerializedName("title") String title,
-            @SerializedName("subtitle") String subtitle,
-            @SerializedName("url") String url) {
+        var scroll = new ScrollPane(content);
+        scroll.setFitToWidth(true);
+        FXUtils.smoothScrolling(scroll);
+        setContent(scroll);
+        var guide = new ComponentList();
+        var login = new LineButton();
+        login.setTitle("群验证码登录");
+        login.setSubtitle("添加账号后，在指定群发送自动复制的登录命令；没有账号时按机器人提示注册。无需密码。");
+        var profile = new LineButton();
+        profile.setTitle("改名与皮肤");
+        profile.setSubtitle("在账号卡片使用改名和上传皮肤按钮，也可在群内发送改名命令。改名不改变角色 UUID。");
+        var updates = new LineButton();
+        updates.setTitle("启动器更新");
+        updates.setSubtitle("在设置中检查 Nomi Launcher 更新。更新包由本项目的 GitHub Releases 提供。");
+        var docs = LineButton.createExternalLinkButton("https://github.com/NomiTeam/nomi-launcher#readme");
+        docs.setTitle("Nomi Launcher 使用说明");
+        guide.getContent().setAll(login, profile, updates, docs);
+        content.getChildren().setAll(guide);
     }
 }
