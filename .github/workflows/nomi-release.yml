@@ -1,0 +1,78 @@
+name: Nomi release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nomi-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Validate tag and prepare private signing key
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          SIGNING_KEY: ${{ secrets.NOMI_SIGNING_KEY_BASE64 }}
+          NOMI_API_BASE: ${{ secrets.NOMI_API_BASE }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, pathlib, re
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?', tag):
+              raise SystemExit('Tag must be v1.0.0 or v1.1.0-rc.1 (alpha/beta also supported)')
+          if not os.environ['SIGNING_KEY'] or not os.environ['NOMI_API_BASE']:
+              raise SystemExit('Configure NOMI_SIGNING_KEY_BASE64 and NOMI_API_BASE repository secrets')
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'nomi-signing-key.pk8'
+          path.write_bytes(base64.b64decode(os.environ['SIGNING_KEY'], validate=True))
+          path.chmod(0o600)
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'NOMI_SIGNATURE_KEY={path}\nNOMI_VERSION={tag[1:]}\n')
+          PY
+      - name: Test and build signed executables
+        env:
+          NOMI_API_BASE: ${{ secrets.NOMI_API_BASE }}
+          NOMI_DEFAULT_SERVER: ${{ secrets.NOMI_DEFAULT_SERVER }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :HMCL:test --tests '*NomiReleaseServiceTest' --tests '*ExecutableHeaderHelperTest' :HMCL:makeExecutables -PnomiVersion="$NOMI_VERSION" --no-daemon --console plain
+      - name: Package release assets
+        run: |
+          mkdir -p release
+          cp "HMCL/build/libs/HMCL-$NOMI_VERSION.jar" "release/NomiLauncher-$NOMI_VERSION.jar"
+          cp "HMCL/build/libs/HMCL-$NOMI_VERSION.exe" "release/NomiLauncher-$NOMI_VERSION.exe"
+          git archive --format=zip --output="release/NomiLauncher-$NOMI_VERSION-sources.zip" HEAD
+          cd release
+          sha256sum NomiLauncher-* > SHA256SUMS
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          options=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then options+=(--prerelease); fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release/* --draft --verify-tag --title "Nomi Launcher $NOMI_VERSION" --generate-notes "${options[@]}"
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false "${options[@]}"
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/nomi-signing-key.pk8"

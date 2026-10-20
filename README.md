@@ -30,7 +30,13 @@ Linux/macOS 使用 `./gradlew`。该任务生成 JAR、Windows EXE 和启动脚�
 
 运行时可用 `-Dnomi.defaultServer=地址` 覆盖默认进服目标，传空值关闭；本机调试可用 `-Dnomi.api.base=http://127.0.0.1:8000` 覆盖认证地址。这些参数放在 `-jar` 前。
 
-当前使用手动更新，设置页可打开 Nomi 发布页，不检查 HMCL 官方更新。
+启动时自动检查本仓库的 GitHub Releases，发现更新后可在界面确认下载、校验并重启；EXE 更新后仍保留 EXE 格式。只接受匹配 Nomi 公钥的签名构建，并校验 GitHub 提供的 SHA-256。预发布版本需要用户主动开启。
+
+## 发布
+
+推送 `v1.0.0` 这类 tag，GitHub Actions 自动构建并发布 EXE、JAR、源码包与校验值；`v1.1.0-rc.1`（也支持 alpha/beta）标记为预发布。先配置仓库 Secrets：`NOMI_SIGNING_KEY_BASE64`（匹配仓库公钥的 PKCS#8 DER 私钥，以 Base64 编码）、`NOMI_API_BASE`、可选的 `NOMI_DEFAULT_SERVER`。私钥必须妥善备份，不能提交仓库。
+
+本地发布构建增加 `-PnomiVersion=1.0.0`，并将 `NOMI_SIGNATURE_KEY` 指向同一私钥文件。未签名的开发构建不能安装在线更新。旧版没有此功能，需要手动升级到支持自动更新的版本一次。
 
 ## 上游与许可证
 
