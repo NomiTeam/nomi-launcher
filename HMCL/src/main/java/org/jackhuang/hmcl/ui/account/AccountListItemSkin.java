@@ -18,7 +18,6 @@
 package org.jackhuang.hmcl.ui.account;
 
 import com.jfoenix.controls.JFXButton;
-import com.google.gson.JsonObject;
 import com.jfoenix.controls.JFXRadioButton;
 import com.jfoenix.effects.JFXDepthManager;
 import javafx.beans.binding.Bindings;
@@ -48,7 +47,6 @@ import org.jackhuang.hmcl.ui.construct.SpinnerPane;
 import org.jackhuang.hmcl.util.javafx.BindingMapping;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.concurrent.CompletableFuture;
 
 import static org.jackhuang.hmcl.util.i18n.I18n.i18n;
 
@@ -204,38 +202,28 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
                 handler.reject("ID 须为 3 至 16 位字母、数字或下划线。");
                 return;
             }
-            var payload = new JsonObject();
-            payload.addProperty("name", name);
-            CompletableFuture.supplyAsync(() -> {
+            NomiService.verifiedAccount(account).thenApplyAsync(active -> {
                 try {
-                    if (account instanceof NomiAuthlibInjectorAccount nomi) {
-                        nomi.ensureGameSession();
-                        NomiService.persistCredentials(account);
-                    }
-                    synchronized (account) {
-                        var privateData = new JsonObject();
-                        account.writePrivateData(privateData);
-                        return NomiService.request("PATCH", "/api/v1/game/profiles/" + account.getProfileID() + "/name",
-                                payload, privateData.get("accessToken").getAsString());
-                    }
+                    NomiService.renameProfile(active, name);
+                    return active;
                 } catch (Exception exception) {
                     throw new java.util.concurrent.CompletionException(exception);
                 }
-            }).whenComplete((session, failure) -> javafx.application.Platform.runLater(() -> {
+            }).whenComplete((@Nullable Account active, @Nullable Throwable failure) -> javafx.application.Platform.runLater(() -> {
                 handler.resolve();
                 if (failure != null) {
                     @Nullable Throwable cause = failure.getCause();
+                    if (org.jackhuang.hmcl.util.Lang.resolveException(failure) instanceof java.util.concurrent.CancellationException) return;
                     Controllers.showToast(cause == null ? "改名失败，请重新尝试。" : cause.getMessage());
                     return;
                 }
-                int index = Accounts.getAccounts().indexOf(account);
-                if (index >= 0) {
-                    if (account instanceof NomiAuthlibInjectorAccount nomi) nomi.acceptProfileName(name);
-                    else {
-                        var renamed = NomiService.accountFromSession(injector.getServer(), session, account.getAccountID());
-                        @Nullable Account selected = Accounts.getSelectedAccount();
-                        Accounts.getAccounts().set(index, renamed);
-                        if (account.equals(selected)) Accounts.setSelectedAccount(renamed);
+                Account verified = java.util.Objects.requireNonNull(active);
+                if (Accounts.getAccounts().contains(verified) && verified instanceof NomiAuthlibInjectorAccount nomi) {
+                    nomi.acceptProfileName(name);
+                    try { org.jackhuang.hmcl.setting.SettingsManager.persistPortableCredentials(verified); }
+                    catch (java.io.IOException exception) {
+                        Controllers.showToast("改名已完成，但本地保存失败；请检查目录权限后刷新账号。");
+                        return;
                     }
                 }
                 Controllers.showToast("改名成功，账号 ID：" + name + "。请重新启动游戏。");

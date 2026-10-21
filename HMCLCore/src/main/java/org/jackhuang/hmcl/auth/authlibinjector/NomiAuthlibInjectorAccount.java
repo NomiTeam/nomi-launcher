@@ -150,7 +150,8 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
         try {
             var request = HttpRequest.newBuilder(refreshEndpoint()).timeout(Duration.ofSeconds(12))
                     .header("Authorization", "Bearer " + refreshToken).DELETE().build();
-            HTTP.send(request, HttpResponse.BodyHandlers.discarding());
+            var response = HTTP.send(request, HttpResponse.BodyHandlers.discarding());
+            if (response.statusCode() != 204) throw new IOException("注销服务返回错误：" + response.statusCode());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new AuthenticationException("注销请求已中断。", exception);

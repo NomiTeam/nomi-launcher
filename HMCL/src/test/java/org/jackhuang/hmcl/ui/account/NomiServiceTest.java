@@ -171,7 +171,7 @@ class NomiServiceTest {
         server.createContext("/api/v1/sessions/refresh", exchange -> {
             String token = exchange.getRequestHeaders().getFirst("Authorization");
             if ("DELETE".equals(exchange.getRequestMethod())) {
-                exchange.sendResponseHeaders(204, -1);
+                exchange.sendResponseHeaders("Bearer revoke-failure".equals(token) ? 503 : 204, -1);
             } else if ("Bearer launcher-refresh".equals(token) || "Bearer wrong-profile".equals(token) || "Bearer drop-response".equals(token)) {
                 refreshed.incrementAndGet();
                 if ("Bearer drop-response".equals(token)) {
@@ -318,6 +318,69 @@ class NomiServiceTest {
         });
         awaitCancellation(before + 1);
     }
+    /// Account operations resume only for the originally requested profile after group verification.
+    @Test
+    void accountOperationsPreserveIdentity() throws Exception {
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var old = NomiService.accountFromSession(server, refreshSession("old", "old-refresh"));
+        for (boolean same : new boolean[] { true, false }) {
+            var session = refreshSession("new", "new-refresh");
+            if (!same) session.getAsJsonObject("game").getAsJsonObject("selectedProfile").addProperty("id", "00000000000000000000000000000000");
+            var replacement = NomiService.accountFromSession(server, session);
+            var result = NomiService.verifiedAccount(old, account -> {
+                if (account == old) throw new CredentialExpiredException("expired");
+                return new org.jackhuang.hmcl.auth.AuthInfo("Alice", account.getProfileID(), "new", "mojang", "{}");
+            }, () -> java.util.concurrent.CompletableFuture.completedFuture(replacement));
+            if (same) assertSame(replacement, result.get(5, TimeUnit.SECONDS));
+            else assertInstanceOf(java.util.concurrent.CancellationException.class,
+                    assertThrows(java.util.concurrent.CompletionException.class, result::join).getCause());
+        }
+    }
+
+    /// A rejected logout is not silently reported as success.
+    @Test
+    void revocationChecksHttpStatus() throws Exception {
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var rejected = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(server, refreshSession("game", "revoke-failure"));
+        assertThrows(AuthenticationException.class, rejected::revokeSession);
+        var accepted = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(server, refreshSession("game", "refresh"));
+        accepted.revokeSession();
+    }
+
+    /// A slow rename leaves the monitor available to UI credential persistence.
+    @Test
+    void slowRenameDoesNotHoldAccountMonitor() throws Exception {
+        var account = NomiService.accountFromSession(new AuthlibInjectorServer(NomiService.AUTH), refreshSession("game", "refresh"));
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var http = Objects.requireNonNull(server);
+        http.createContext("/api/v1/game/profiles/", exchange -> {
+            entered.countDown();
+            try { release.await(5, TimeUnit.SECONDS); }
+            catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        var pending = java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try { NomiService.renameProfile(account, "Renamed"); }
+            catch (Exception exception) { throw new java.util.concurrent.CompletionException(exception); }
+        });
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            var snapshot = java.util.concurrent.CompletableFuture.runAsync(() -> {
+                synchronized (account) { account.writePrivateData(new JsonObject()); }
+            });
+            snapshot.get(1, TimeUnit.SECONDS);
+            assertFalse(pending.isDone());
+        } finally {
+            release.countDown();
+            pending.get(5, TimeUnit.SECONDS);
+            http.removeContext("/api/v1/game/profiles/");
+        }
+    }
+
     /// Dialog closure propagates cancellation to the waiting launch future.
     @Test
     void closingLoginPaneCompletesCancellation() throws Exception {

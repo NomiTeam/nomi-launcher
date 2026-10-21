@@ -90,6 +90,36 @@ public final class NomiService {
         }).thenCompose(java.util.function.Function.identity());
     }
 
+    /// Reauthenticates account operations without accidentally applying them to a different QQ account.
+    public static java.util.concurrent.CompletableFuture<Account> verifiedAccount(Account account) {
+        return verifiedAccount(account, NomiService::logIn,
+                org.jackhuang.hmcl.ui.DialogController::requestNomiLogin);
+    }
+
+    /// Supports deterministic verification of replacement identity and cancellation handling.
+    static java.util.concurrent.CompletableFuture<Account> verifiedAccount(Account account,
+            org.jackhuang.hmcl.util.function.ExceptionalFunction<Account, org.jackhuang.hmcl.auth.AuthInfo,
+                    org.jackhuang.hmcl.auth.AuthenticationException> authenticate,
+            java.util.function.Supplier<java.util.concurrent.CompletableFuture<Account>> prompt) {
+        var current = new java.util.concurrent.atomic.AtomicReference<>(account);
+        return logInForLaunch(account, current::set, authenticate, prompt).thenApply(auth -> {
+            Account verified = current.get();
+            if (!verified.getProfileID().equals(account.getProfileID()))
+                throw new java.util.concurrent.CancellationException("验证的账号已改变，请在对应账号上重新操作。");
+            return verified;
+        });
+    }
+
+    /// Takes a short credential snapshot before sending a rename, without holding the account monitor over I/O.
+    public static JsonObject renameProfile(Account account, String name) throws IOException, InterruptedException {
+        var data = new JsonObject();
+        synchronized (account) { account.writePrivateData(data); }
+        var payload = new JsonObject();
+        payload.addProperty("name", name);
+        return request("PATCH", "/api/v1/game/profiles/" + account.getProfileID() + "/name",
+                payload, data.get("accessToken").getAsString());
+    }
+
     /// Logs in off the UI thread, then confirms private credentials are on disk before continuing.
     public static org.jackhuang.hmcl.auth.AuthInfo logIn(Account account)
             throws org.jackhuang.hmcl.auth.AuthenticationException {

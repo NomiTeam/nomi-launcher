@@ -29,9 +29,7 @@ import javafx.scene.image.Image;
 import javafx.stage.FileChooser;
 import org.jackhuang.hmcl.auth.Account;
 import org.jackhuang.hmcl.auth.authlibinjector.NomiAuthlibInjectorAccount;
-import org.jackhuang.hmcl.auth.AuthenticationException;
 import org.jackhuang.hmcl.auth.ClassicAccount;
-import org.jackhuang.hmcl.auth.CredentialExpiredException;
 import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorAccount;
 import org.jackhuang.hmcl.auth.authlibinjector.AuthlibInjectorServer;
 import org.jackhuang.hmcl.auth.offline.OfflineAccount;
@@ -41,7 +39,6 @@ import org.jackhuang.hmcl.setting.Accounts;
 import org.jackhuang.hmcl.task.Schedulers;
 import org.jackhuang.hmcl.task.Task;
 import org.jackhuang.hmcl.ui.Controllers;
-import org.jackhuang.hmcl.ui.DialogController;
 import org.jackhuang.hmcl.ui.construct.MessageDialogPane.MessageType;
 import org.jackhuang.hmcl.util.StringUtils;
 import org.jackhuang.hmcl.util.skin.InvalidSkinException;
@@ -100,24 +97,10 @@ public class AccountListItem extends RadioButton {
     }
 
     /// Refreshes the account and persists rotating credentials before dependent operations run.
-    public Task<?> refreshAsync() {
-        return Task.runAsync(() -> {
+    public Task<Account> refreshAsync() {
+        return Task.composeAsync(() -> {
             account.clearCache();
-            try {
-                NomiService.logIn(account);
-            } catch (CredentialExpiredException e) {
-                try {
-                    DialogController.logIn(account);
-                } catch (CancellationException e1) {
-                    // ignore cancellation
-                } catch (Exception e1) {
-                    LOG.warning("Failed to refresh " + account + " with password", e1);
-                    throw e1;
-                }
-            } catch (AuthenticationException e) {
-                LOG.warning("Failed to refresh " + account + " with token", e);
-                throw e;
-            }
+            return Task.fromCompletableFuture(NomiService.verifiedAccount(account));
         });
     }
 
@@ -159,7 +142,7 @@ public class AccountListItem extends RadioButton {
         }
 
         return refreshAsync()
-                .thenRunAsync(() -> {
+                .thenApplyAsync(active -> {
                     Image skinImg;
                     try (var input = Files.newInputStream(selectedFile)) {
                         skinImg = new Image(input);
@@ -175,11 +158,13 @@ public class AccountListItem extends RadioButton {
                     NormalizedSkin skin = new NormalizedSkin(skinImg);
                     String model = skin.isSlim() ? "slim" : "";
                     LOG.info("Uploading skin [" + selectedFile + "], model [" + model + "]");
-                    account.uploadSkin(skin.isSlim(), selectedFile);
+                    active.uploadSkin(skin.isSlim(), selectedFile);
+                    active.clearCache();
+                    return active;
                 })
-                .thenComposeAsync(refreshAsync())
-                .whenComplete(Schedulers.javafx(), e -> {
-                    if (e != null) {
+                .thenComposeAsync(active -> Task.fromCompletableFuture(NomiService.verifiedAccount(active)))
+                .whenComplete(Schedulers.javafx(), (@Nullable Exception e) -> {
+                    if (e != null && !(org.jackhuang.hmcl.util.Lang.resolveException(e) instanceof CancellationException)) {
                         Controllers.dialog(Accounts.localizeErrorMessage(e), i18n("account.skin.upload.failed"), MessageType.ERROR);
                     }
                 });
@@ -198,11 +183,20 @@ public class AccountListItem extends RadioButton {
         removeStoredAccount();
     }
 
-    /// Deletes the local record immediately and revokes its remote credentials in the background.
+    /// Prevents duplicate remote revocations while removal is in progress.
+    private boolean removing;
+
+    /// Removes the local record only after remote revocation succeeds, retaining a retry path on failure.
     private void removeStoredAccount() {
-        Accounts.getAccounts().remove(account);
-        if (account instanceof NomiAuthlibInjectorAccount nomi)
-            Task.runAsync(nomi::revokeSession).start();
+        if (removing) return;
+        if (account instanceof NomiAuthlibInjectorAccount nomi) {
+            removing = true;
+            Task.runAsync(nomi::revokeSession).whenComplete(Schedulers.javafx(), (@Nullable Exception failure) -> {
+                removing = false;
+                if (failure == null) Accounts.getAccounts().remove(account);
+                else Controllers.showToast("远端注销失败，账号尚未移除，请检查网络后重试。");
+            }).start();
+        } else Accounts.getAccounts().remove(account);
     }
 
     public Account getAccount() {
