@@ -774,17 +774,9 @@ public final class LauncherHelper {
         return future;
     }
 
-    /// Logs in only through Nomi and fails closed when external authentication is unavailable.
+    /// Opens group verification for expired credentials and resumes the launch with its verified account.
     private Task<AuthInfo> logIn(Account account) {
-        return Task.composeAsync(() -> {
-            if (!org.jackhuang.hmcl.ui.account.NomiService.permits(account))
-                throw new AuthenticationException("请选择 Nomi 账号");
-            try {
-                return Task.completed(org.jackhuang.hmcl.ui.account.NomiService.logIn(account));
-            } catch (CredentialExpiredException exception) {
-                throw new AuthenticationException("会话已过期，请在 Nomi 账号页通过群验证码重新登录", exception);
-            }
-        });
+        return Task.fromCompletableFuture(org.jackhuang.hmcl.ui.account.NomiService.logInForLaunch(account, this::setAccount));
     }
     private void checkExit() {
         switch (launcherVisibility) {

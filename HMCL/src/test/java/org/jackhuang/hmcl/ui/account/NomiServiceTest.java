@@ -21,6 +21,7 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonObject;
 import org.jackhuang.hmcl.auth.authlibinjector.NomiAuthlibInjectorAccount;
 import org.jackhuang.hmcl.auth.CredentialExpiredException;
+import org.jackhuang.hmcl.auth.Account;
 import org.jackhuang.hmcl.auth.AuthenticationException;
 import com.sun.net.httpserver.HttpServer;
 import java.awt.image.BufferedImage;
@@ -317,6 +318,60 @@ class NomiServiceTest {
         });
         awaitCancellation(before + 1);
     }
+    /// Dialog closure propagates cancellation to the waiting launch future.
+    @Test
+    void closingLoginPaneCompletesCancellation() throws Exception {
+        var pane = fx(NomiAccountPane::new);
+        var result = pane.loginResult().toCompletableFuture();
+        assertFalse(result.isDone());
+        fx(() -> { pane.onDialogClosed(); return true; });
+        assertInstanceOf(java.util.concurrent.CancellationException.class,
+                assertThrows(java.util.concurrent.CompletionException.class, result::join).getCause());
+    }
+
+    /// Verification replaces expired credentials before the waiting launch resumes.
+    @Test
+    void launchRecoversExpiredCredentials() throws Exception {
+        var server = new AuthlibInjectorServer(NomiService.AUTH);
+        var old = NomiService.accountFromSession(server, refreshSession("old", "old-refresh"));
+        var replacement = NomiService.accountFromSession(server, refreshSession("new", "new-refresh"));
+        var verified = new java.util.concurrent.CompletableFuture<org.jackhuang.hmcl.auth.Account>();
+        var prompted = new CountDownLatch(1);
+        var selected = new java.util.concurrent.atomic.AtomicReference<@Nullable Account>();
+        var expected = new org.jackhuang.hmcl.auth.AuthInfo("Alice", replacement.getProfileID(), "new", "mojang", "{}");
+        var result = NomiService.logInForLaunch(old, selected::set, account -> {
+            if (account == old) throw new CredentialExpiredException("expired");
+            assertSame(replacement, account);
+            return expected;
+        }, () -> { prompted.countDown(); return verified; });
+        assertTrue(prompted.await(5, TimeUnit.SECONDS));
+        assertFalse(result.isDone());
+        verified.complete(replacement);
+        assertSame(expected, result.get(5, TimeUnit.SECONDS));
+        assertSame(replacement, selected.get());
+    }
+
+    /// Network failures must not request a new login code.
+    @Test
+    void launchPreservesNetworkFailure() {
+        var account = NomiService.accountFromSession(new AuthlibInjectorServer(NomiService.AUTH), refreshSession("game", "refresh"));
+        var failure = new AuthenticationException("network unavailable");
+        var result = NomiService.logInForLaunch(account, ignored -> fail("unexpected replacement"),
+                ignored -> { throw failure; }, () -> { fail("unexpected prompt"); return new java.util.concurrent.CompletableFuture<>(); });
+        assertSame(failure, assertThrows(java.util.concurrent.CompletionException.class, result::join).getCause());
+    }
+
+    /// Closing verification cancels the launch instead of falling back to expired credentials.
+    @Test
+    void launchStopsWhenVerificationCancelled() {
+        var account = NomiService.accountFromSession(new AuthlibInjectorServer(NomiService.AUTH), refreshSession("game", "refresh"));
+        var result = NomiService.logInForLaunch(account, ignored -> fail("unexpected replacement"),
+                ignored -> { throw new CredentialExpiredException("expired"); },
+                () -> java.util.concurrent.CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("closed")));
+        assertInstanceOf(java.util.concurrent.CancellationException.class,
+                assertThrows(java.util.concurrent.CompletionException.class, result::join).getCause());
+    }
+
     /// Builds an isolated device session without a real account or external service.
     private static JsonObject refreshSession(String gameToken, String refreshToken) {
         var result = JsonParser.parseString("""

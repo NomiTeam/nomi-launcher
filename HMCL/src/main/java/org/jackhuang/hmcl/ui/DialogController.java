@@ -18,6 +18,7 @@
 package org.jackhuang.hmcl.ui;
 
 import org.jackhuang.hmcl.auth.*;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CancellationException;
 
@@ -25,6 +26,24 @@ import static org.jackhuang.hmcl.ui.FXUtils.runInFX;
 
 public final class DialogController {
     private DialogController() {
+    }
+
+    /// Opens group-code verification on the UI thread and waits asynchronously for a saved account.
+    public static java.util.concurrent.CompletableFuture<Account> requestNomiLogin() {
+        var result = new java.util.concurrent.CompletableFuture<Account>();
+        runInFX(() -> {
+            if (result.isDone()) return;
+            var pane = new org.jackhuang.hmcl.ui.account.NomiAccountPane();
+            pane.loginResult().whenComplete((@Nullable Account account, @Nullable Throwable failure) -> {
+                if (failure != null) result.completeExceptionally(failure);
+                else result.complete(java.util.Objects.requireNonNull(account));
+            });
+            result.whenComplete((@Nullable Account account, @Nullable Throwable failure) -> {
+                if (result.isCancelled()) runInFX(() -> pane.fireEvent(new org.jackhuang.hmcl.ui.construct.DialogCloseEvent()));
+            });
+            Controllers.dialog(pane);
+        });
+        return result;
     }
 
     /// Opens QQ verification instead of any upstream credential dialog.

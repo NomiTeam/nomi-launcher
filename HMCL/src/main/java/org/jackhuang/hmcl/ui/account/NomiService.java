@@ -53,6 +53,43 @@ public final class NomiService {
     /// Utility class without instances.
     private NomiService() { }
 
+    /// Recovers an expired launch account with group verification, then resumes using the newly saved account.
+    public static java.util.concurrent.CompletableFuture<org.jackhuang.hmcl.auth.AuthInfo> logInForLaunch(
+            Account account, java.util.function.Consumer<Account> selected) {
+        return logInForLaunch(account, selected, NomiService::logIn,
+                org.jackhuang.hmcl.ui.DialogController::requestNomiLogin);
+    }
+
+    /// Keeps credential failures recoverable while preserving transport errors and user cancellation.
+    static java.util.concurrent.CompletableFuture<org.jackhuang.hmcl.auth.AuthInfo> logInForLaunch(
+            Account account, java.util.function.Consumer<Account> selected,
+            org.jackhuang.hmcl.util.function.ExceptionalFunction<Account, org.jackhuang.hmcl.auth.AuthInfo,
+                    org.jackhuang.hmcl.auth.AuthenticationException> authenticate,
+            java.util.function.Supplier<java.util.concurrent.CompletableFuture<Account>> prompt) {
+        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try {
+                if (!permits(account)) throw new org.jackhuang.hmcl.auth.CredentialExpiredException("请选择 Nomi 账号");
+                return authenticate.apply(account);
+            } catch (org.jackhuang.hmcl.auth.AuthenticationException exception) {
+                throw new java.util.concurrent.CompletionException(exception);
+            }
+        }).<java.util.concurrent.CompletableFuture<org.jackhuang.hmcl.auth.AuthInfo>>handle((@Nullable org.jackhuang.hmcl.auth.AuthInfo auth, @Nullable Throwable failure) -> {
+            if (failure == null) return java.util.concurrent.CompletableFuture.completedFuture(java.util.Objects.requireNonNull(auth));
+            Throwable cause = org.jackhuang.hmcl.util.Lang.resolveException(failure);
+            if (!(cause instanceof org.jackhuang.hmcl.auth.CredentialExpiredException)
+                    && !(cause instanceof org.jackhuang.hmcl.auth.CharacterDeletedException))
+                return java.util.concurrent.CompletableFuture.failedFuture(cause);
+            return prompt.get().thenApplyAsync(replacement -> {
+                if (!permits(replacement)) throw new java.util.concurrent.CancellationException("登录账号不可用");
+                selected.accept(replacement);
+                try { return authenticate.apply(replacement); }
+                catch (org.jackhuang.hmcl.auth.AuthenticationException exception) {
+                    throw new java.util.concurrent.CompletionException(exception);
+                }
+            });
+        }).thenCompose(java.util.function.Function.identity());
+    }
+
     /// Logs in off the UI thread, then confirms private credentials are on disk before continuing.
     public static org.jackhuang.hmcl.auth.AuthInfo logIn(Account account)
             throws org.jackhuang.hmcl.auth.AuthenticationException {

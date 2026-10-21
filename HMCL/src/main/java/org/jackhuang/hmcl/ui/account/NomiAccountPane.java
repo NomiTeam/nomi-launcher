@@ -63,6 +63,13 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
     private volatile boolean closed;
     /// Indicates that a session was imported and must not be cancelled.
     private boolean completed;
+    /// Completes only after a verified account has been stored; closure otherwise cancels the waiting launch.
+    private final CompletableFuture<Account> loginResult = new CompletableFuture<>();
+
+    /// Exposes dialog completion without allowing callers to complete its internal promise.
+    public java.util.concurrent.CompletionStage<Account> loginResult() {
+        return loginResult.minimalCompletionStage();
+    }
     /// Extra controls appear only when recovery is needed, leaving the normal code page uncluttered.
     private final JFXButton retry = new JFXButton("重试");
     /// Starts another application after cancelling the previous one.
@@ -287,6 +294,7 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
         requestId = null;
         pollToken = null;
         fireEvent(new DialogCloseEvent());
+        loginResult.complete(selected);
     }
 
     /// A QQ-authenticated account and its raw session needed for record replacement.
@@ -322,6 +330,7 @@ public final class NomiAccountPane extends JFXDialogLayout implements DialogAwar
     public void onDialogClosed() {
         closed = true;
         polling.stop();
+        if (!completed) loginResult.completeExceptionally(new java.util.concurrent.CancellationException("登录已取消"));
         if (!completed && requestId != null && pollToken != null) {
             String id = requestId;
             String token = pollToken;
