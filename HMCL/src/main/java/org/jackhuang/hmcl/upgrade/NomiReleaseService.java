@@ -63,9 +63,10 @@ public final class NomiReleaseService {
                 if (version.contains("-") && !prerelease) continue;
                 for (var item : release.getAsJsonArray("assets")) {
                     JsonObject asset = item.getAsJsonObject();
-                    if (!("NomiLauncher-" + version + ".jar").equals(asset.get("name").getAsString())) continue;
+                    String name = asset.get("name").getAsString();
+                    if (!"NomiLauncher.jar".equals(name) && !("NomiLauncher-" + version + ".jar").equals(name)) continue;
                     String url = asset.get("browser_download_url").getAsString();
-                    String expected = "https://github.com/" + REPOSITORY + "/releases/download/" + tag + "/NomiLauncher-" + version + ".jar";
+                    String expected = "https://github.com/" + REPOSITORY + "/releases/download/" + tag + "/" + name;
                     if (!url.equals(expected) || asset.get("size").getAsLong() <= 0) continue;
                     String digest = asset.get("digest").getAsString();
                     if (!digest.matches("sha256:[a-fA-F0-9]{64}")) continue;

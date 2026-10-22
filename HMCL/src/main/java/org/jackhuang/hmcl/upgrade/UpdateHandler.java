@@ -45,8 +45,6 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.jackhuang.hmcl.ui.FXUtils.checkFxUserThread;
@@ -248,16 +246,8 @@ public final class UpdateHandler {
         }).collect(Collectors.joining(" "));
     }
 
-    /// Updates standard Nomi or legacy launcher filenames while preserving custom user names.
+    /// Preserves installed filenames so existing shortcuts continue to work after updates.
     static Optional<Path> tryRename(Path path, String newVersion) {
-        String filename = path.getFileName().toString();
-        Matcher matcher = Pattern.compile("^(?<prefix>(?:NomiLauncher|[hH][mM][cC][lL])[.-])(?<version>\\d+(?:\\.\\d+)*(?:-(?:alpha|beta|rc)\\.\\d+)?)(?<suffix>\\.[^.]+)$").matcher(filename);
-        if (matcher.find()) {
-            String newFilename = matcher.group("prefix") + newVersion + matcher.group("suffix");
-            if (!newFilename.equals(filename)) {
-                return Optional.of(path.resolveSibling(newFilename));
-            }
-        }
         return Optional.empty();
     }
 

@@ -59,10 +59,10 @@ class ExecutableHeaderHelperTest {
         }
     }
 
-    /// Standard release names advance with the version, including prerelease filenames.
+    /// Updates preserve legacy versioned names and custom installed names.
     @Test void updatesStandardNamesButKeepsCustomNames() {
-        assertEquals(java.util.Optional.of(Path.of("NomiLauncher-1.0.1.exe")), UpdateHandler.tryRename(Path.of("NomiLauncher-1.0.0.exe"), "1.0.1"));
-        assertEquals(java.util.Optional.of(Path.of("NomiLauncher-1.1.0.jar")), UpdateHandler.tryRename(Path.of("NomiLauncher-1.1.0-rc.1.jar"), "1.1.0"));
+        assertEquals(java.util.Optional.empty(), UpdateHandler.tryRename(Path.of("NomiLauncher-1.0.0.exe"), "1.0.1"));
+        assertEquals(java.util.Optional.empty(), UpdateHandler.tryRename(Path.of("NomiLauncher-1.1.0-rc.1.jar"), "1.1.0"));
         assertEquals(java.util.Optional.empty(), UpdateHandler.tryRename(Path.of("MyLauncher.exe"), "1.0.1"));
     }
 
