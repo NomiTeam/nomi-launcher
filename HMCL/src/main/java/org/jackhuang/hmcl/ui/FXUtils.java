@@ -878,16 +878,26 @@ public final class FXUtils {
         return new AllListener(childSelectedCount).subscriptions;
     }
 
+    /// Supplies native window managers with size-specific Nomi artwork instead of upscaling one 32px image.
     public static void setIcon(Stage stage) {
-        String icon;
         if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS) {
-            icon = "/assets/img/icon.png";
+            stage.getIcons().setAll(
+                    newBuiltinImage("/assets/img/icon-windows-16.png"),
+                    newBuiltinImage("/assets/img/icon-windows-24.png"),
+                    newBuiltinImage("/assets/img/icon-windows-32.png"),
+                    newBuiltinImage("/assets/img/icon-windows-48.png"),
+                    newBuiltinImage("/assets/img/icon-windows-64.png"),
+                    newBuiltinImage("/assets/img/icon-windows-128.png"),
+                    newBuiltinImage("/assets/img/icon-windows-256.png"));
         } else if (OperatingSystem.CURRENT_OS == OperatingSystem.MACOS) {
-            icon = "/assets/img/icon-mac.png";
+            stage.getIcons().setAll(newBuiltinImage("/assets/img/icon-mac.png"));
         } else {
-            icon = "/assets/img/icon@4x.png";
+            stage.getIcons().setAll(
+                    newBuiltinImage("/assets/img/icon.png"),
+                    newBuiltinImage("/assets/img/icon@2x.png"),
+                    newBuiltinImage("/assets/img/icon@4x.png"),
+                    newBuiltinImage("/assets/img/icon@8x.png"));
         }
-        stage.getIcons().add(newBuiltinImage(icon));
     }
 
     public static Image loadImage(Path path) throws Exception {

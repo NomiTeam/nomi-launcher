@@ -25,6 +25,31 @@ class WindowsLauncherBrandingTest {
     /// Uses a little-endian PE view for independent assertions on headers and fixed version fields.
     private static ByteBuffer view(byte[] bytes) { return ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN); }
 
+    /// Follows the new resource directory and maps its first data RVA back to file bytes.
+    private static int firstResourceOffset(byte[] bytes, int type) {
+        var pe = view(bytes);
+        int header = pe.getInt(0x3c);
+        int optional = header + 24;
+        int count = Short.toUnsignedInt(pe.getShort(header + 6));
+        int table = optional + Short.toUnsignedInt(pe.getShort(header + 20));
+        int section = table + (count - 1) * 40;
+        int raw = pe.getInt(section + 20);
+        int address = pe.getInt(section + 12);
+        int entries = Short.toUnsignedInt(pe.getShort(raw + 12)) + Short.toUnsignedInt(pe.getShort(raw + 14));
+        for (int i = 0; i < entries; i++) {
+            int entry = raw + 16 + i * 8;
+            if (pe.getInt(entry) != type) continue;
+            int child = pe.getInt(entry + 4);
+            for (int depth = 0; depth < 3 && child < 0; depth++) {
+                int directory = raw + (child & 0x7fffffff);
+                child = pe.getInt(directory + 20);
+            }
+            assertTrue(child >= 0);
+            return raw + pe.getInt(raw + child) - address;
+        }
+        throw new AssertionError("Missing resource type: " + type);
+    }
+
     /// Checks both textual metadata and Windows' numeric four-part version fields.
     @Test
     void stableAndPrereleaseMetadataMatchBuildVersion() throws IOException {
@@ -36,7 +61,8 @@ class WindowsLauncherBrandingTest {
             int count = Short.toUnsignedInt(pe.getShort(header + 6));
             int table = optional + Short.toUnsignedInt(pe.getShort(header + 20));
             int raw = pe.getInt(table + (count - 1) * 40 + 20);
-            int fixed = raw + ((6 + ("VS_VERSION_INFO".length() + 1) * 2 + 3) & -4);
+            int node = firstResourceOffset(branded, 16);
+            int fixed = node + ((6 + ("VS_VERSION_INFO".length() + 1) * 2 + 3) & -4);
             assertEquals(0xfeef04bd, pe.getInt(fixed));
             int ms = version.startsWith("1.") ? 1 << 16 : 2 << 16 | 14;
             int ls = (version.startsWith("1.") ? 3 : 512) << 16;
@@ -66,6 +92,10 @@ class WindowsLauncherBrandingTest {
         int header = before.getInt(0x3c);
         int count = Short.toUnsignedInt(before.getShort(header + 6));
         assertEquals(count + 1, Short.toUnsignedInt(after.getShort(header + 6)));
+        int addedRaw = after.getInt(header + 24 + Short.toUnsignedInt(after.getShort(header + 20)) + count * 40 + 20);
+        // A manifest left before the moved resource directory makes Windows reject an otherwise parseable PE.
+        assertTrue(firstResourceOffset(branded, 24) >= addedRaw);
+        assertTrue(firstResourceOffset(branded, 16) >= addedRaw);
         assertEquals(before.getInt(header + 40), after.getInt(header + 40));
         int table = header + 24 + Short.toUnsignedInt(before.getShort(header + 20));
         for (int i = 0; i < count; i++) {
@@ -78,10 +108,10 @@ class WindowsLauncherBrandingTest {
         }
     }
 
-    /// Icon replacement accepts the four stub resolutions and rejects incomplete or malformed ICO files.
+    /// Icon replacement accepts all seven Windows resolutions and rejects incomplete or malformed ICO files.
     @Test
     void replacesIconsAndRejectsInvalidIco() throws IOException {
-        int[] sizes = {24, 32, 48, 256};
+        int[] sizes = {16, 24, 32, 48, 64, 128, 256};
         var payload = new java.io.ByteArrayOutputStream();
         var directory = ByteBuffer.allocate(6 + sizes.length * 16).order(ByteOrder.LITTLE_ENDIAN);
         directory.putShort((short) 0).putShort((short) 1).putShort((short) sizes.length);
@@ -103,6 +133,13 @@ class WindowsLauncherBrandingTest {
         byte[] branded = WindowsLauncherBranding.brand(original, "1.0.4", ico.toByteArray());
         assertArrayEquals(snapshot, original);
         assertTrue(branded.length > original.length);
+        int group = firstResourceOffset(branded, 14);
+        assertEquals(7, Short.toUnsignedInt(view(branded).getShort(group + 4)));
+        assertEquals(16, Byte.toUnsignedInt(branded[group + 6]));
+        assertEquals(0, branded[group + 6 + 6 * 14]); // 0 encodes the 256px entry.
+        int firstIcon = firstResourceOffset(branded, 3);
+        assertEquals((byte) 137, branded[firstIcon]);
+        assertEquals('P', branded[firstIcon + 1]);
         assertThrows(IllegalArgumentException.class, () -> WindowsLauncherBranding.brand(original, "1.0.4", new byte[0]));
         byte[] incomplete = ico.toByteArray();
         view(incomplete).putShort(4, (short) 1);
