@@ -20,6 +20,10 @@ public abstract class BrandWindowsLauncher extends DefaultTask {
     @InputFile
     public abstract RegularFileProperty getSourceFile();
 
+    /// Multi-resolution Windows icon embedded alongside the version resources.
+    @InputFile
+    public abstract RegularFileProperty getIconFile();
+
     /// Nomi version written into both textual and numeric Windows version fields.
     @Input
     public abstract Property<String> getVersion();
@@ -42,6 +46,6 @@ public abstract class BrandWindowsLauncher extends DefaultTask {
         } else stub = Files.readAllBytes(source);
         var output = getOutputFile().get().getAsFile().toPath();
         Files.createDirectories(output.getParent());
-        Files.write(output, WindowsLauncherBranding.brand(stub, getVersion().get()));
+        Files.write(output, WindowsLauncherBranding.brand(stub, getVersion().get(), Files.readAllBytes(getIconFile().get().getAsFile().toPath())));
     }
 }

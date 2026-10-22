@@ -78,6 +78,37 @@ class WindowsLauncherBrandingTest {
         }
     }
 
+    /// Icon replacement accepts the four stub resolutions and rejects incomplete or malformed ICO files.
+    @Test
+    void replacesIconsAndRejectsInvalidIco() throws IOException {
+        int[] sizes = {24, 32, 48, 256};
+        var payload = new java.io.ByteArrayOutputStream();
+        var directory = ByteBuffer.allocate(6 + sizes.length * 16).order(ByteOrder.LITTLE_ENDIAN);
+        directory.putShort((short) 0).putShort((short) 1).putShort((short) sizes.length);
+        for (int size : sizes) {
+            var image = new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            image.setRGB(size / 2, size / 2, 0xff22aa44);
+            var png = new java.io.ByteArrayOutputStream();
+            assertTrue(javax.imageio.ImageIO.write(image, "PNG", png));
+            byte[] bytes = png.toByteArray();
+            directory.put((byte) size).put((byte) size).putShort((short) 0).putShort((short) 1).putShort((short) 32)
+                    .putInt(bytes.length).putInt(directory.capacity() + payload.size());
+            payload.writeBytes(bytes);
+        }
+        var ico = new java.io.ByteArrayOutputStream();
+        ico.writeBytes(directory.array());
+        ico.writeBytes(payload.toByteArray());
+        byte[] original = stub();
+        byte[] snapshot = original.clone();
+        byte[] branded = WindowsLauncherBranding.brand(original, "1.0.4", ico.toByteArray());
+        assertArrayEquals(snapshot, original);
+        assertTrue(branded.length > original.length);
+        assertThrows(IllegalArgumentException.class, () -> WindowsLauncherBranding.brand(original, "1.0.4", new byte[0]));
+        byte[] incomplete = ico.toByteArray();
+        view(incomplete).putShort(4, (short) 1);
+        assertThrows(IllegalArgumentException.class, () -> WindowsLauncherBranding.brand(original, "1.0.4", incomplete));
+    }
+
     /// Missing attribution and invalid versions are fatal rather than silently producing misbranded binaries.
     @Test
     void refusesMissingCopyrightAndInvalidVersions() throws IOException {

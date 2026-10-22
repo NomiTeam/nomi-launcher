@@ -99,6 +99,7 @@ dependencies {
 val brandWindowsLauncher = tasks.register<BrandWindowsLauncher>("brandWindowsLauncher") {
     sourceFile.fileProvider(if (launcherExe.isBlank()) windowsLauncherStub.map { it.singleFile } else provider { file(launcherExe) })
     version.set(provider { project.version.toString() })
+    iconFile.set(layout.projectDirectory.file("src/main/resources/assets/img/nomi.ico"))
     outputFile.set(layout.buildDirectory.file("generated/windows/HMCLauncher.exe"))
 }
 

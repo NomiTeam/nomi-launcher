@@ -13,9 +13,10 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
-/// Rebrands PE version resources without altering the upstream executable code or requiring Windows tooling.
+/// Rebrands PE version and icon resources without altering executable code or requiring Windows tooling.
 @NotNullByDefault
 public final class WindowsLauncherBranding {
     /// No instances are needed for the build-time resource transformation.
@@ -23,6 +24,11 @@ public final class WindowsLauncherBranding {
 
     /// Produces a new PE with version data in an added read-only section and preserves upstream copyright text.
     public static byte[] brand(byte[] input, String version) {
+        return brand(input, version, null);
+    }
+
+    /// Replaces version information and, when provided, all existing application icon resources.
+    public static byte[] brand(byte[] input, String version, byte @Nullable [] iconFile) {
         byte[] original = input.clone();
         if (original.length < 64 || original[0] != 'M' || original[1] != 'Z')
             throw new IllegalArgumentException("Windows launcher is not a PE executable");
@@ -80,6 +86,33 @@ public final class WindowsLauncherBranding {
             resources.writeBytes(replacement);
             pad(resources);
         }
+        if (iconFile != null) {
+            var images = readIcon(iconFile);
+            var icons = resourceLeaves(source, resource, 3);
+            var groups = resourceLeaves(source, resource, 14);
+            if (icons.isEmpty() || groups.isEmpty()) throw new IllegalArgumentException("Windows launcher icons are missing");
+            for (var groupLeaves : groups.values()) {
+                for (var leaf : groupLeaves) {
+                    int old = locate(sections, source.getInt(leaf.entry()));
+                    byte[] group = Arrays.copyOfRange(original, old, Math.addExact(old, source.getInt(leaf.entry() + 4)));
+                    var data = ByteBuffer.wrap(group).order(ByteOrder.LITTLE_ENDIAN);
+                    int entries = Short.toUnsignedInt(data.getShort(4));
+                    if (group.length != 6 + entries * 14) throw new IllegalArgumentException("Invalid Windows icon group");
+                    for (int i = 0; i < entries; i++) {
+                        int offset = 6 + i * 14;
+                        int width = Byte.toUnsignedInt(group[offset]);
+                        byte @Nullable [] png = images.get(width == 0 ? 256 : width);
+                        if (png == null) throw new IllegalArgumentException("ICO is missing a required resolution");
+                        int id = Short.toUnsignedInt(data.getShort(offset + 12));
+                        @Nullable List<Leaf> targets = icons.get(id);
+                        if (targets == null) throw new IllegalArgumentException("Icon group references a missing image");
+                        for (var target : targets) append(source, resources, address, target, png);
+                        data.putInt(offset + 8, png.length);
+                    }
+                    append(source, resources, address, leaf, group);
+                }
+            }
+        }
         int raw = align(original.length, fileAlignment);
         byte[] content = resources.toByteArray();
         int rawSize = align(content.length, fileAlignment);
@@ -105,6 +138,61 @@ public final class WindowsLauncherBranding {
         checksum = (checksum & 0xffff) + (checksum >>> 16);
         result.putInt(optional + 64, (int) checksum + output.length);
         return output;
+    }
+
+    /// Appends replacement data and redirects the original resource leaf to the new section.
+    private static void append(ByteBuffer source, ByteArrayOutputStream resources, int address, Leaf leaf, byte[] bytes) {
+        source.putInt(leaf.entry(), Math.addExact(address, resources.size()));
+        source.putInt(leaf.entry() + 4, bytes.length);
+        resources.writeBytes(bytes);
+        pad(resources);
+    }
+
+    /// Reads PNG-backed ICO resolutions without a platform-specific image conversion dependency.
+    private static Map<Integer, byte[]> readIcon(byte[] bytes) {
+        var data = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        if (bytes.length < 6 || data.getShort(0) != 0 || data.getShort(2) != 1)
+            throw new IllegalArgumentException("Invalid ICO header");
+        int count = Short.toUnsignedInt(data.getShort(4));
+        if (count == 0 || 6 + count * 16 > bytes.length) throw new IllegalArgumentException("Invalid ICO directory");
+        var images = new LinkedHashMap<Integer, byte[]>();
+        for (int i = 0; i < count; i++) {
+            int entry = 6 + i * 16;
+            int width = Byte.toUnsignedInt(bytes[entry]);
+            int height = Byte.toUnsignedInt(bytes[entry + 1]);
+            int size = data.getInt(entry + 8);
+            int offset = data.getInt(entry + 12);
+            if (width != height || size < 8 || offset < 6 + count * 16 || offset > bytes.length - size)
+                throw new IllegalArgumentException("Invalid ICO image bounds");
+            byte[] png = Arrays.copyOfRange(bytes, offset, offset + size);
+            if (!Arrays.equals(Arrays.copyOf(png, 8), new byte[]{(byte) 137, 80, 78, 71, 13, 10, 26, 10}))
+                throw new IllegalArgumentException("ICO images must be PNG encoded");
+            images.put(width == 0 ? 256 : width, png);
+        }
+        return images;
+    }
+
+    /// Resolves numeric resource names to their language-specific data entries.
+    private static Map<Integer, List<Leaf>> resourceLeaves(ByteBuffer source, int base, int type) {
+        var result = new LinkedHashMap<Integer, List<Leaf>>();
+        int count = Short.toUnsignedInt(source.getShort(base + 12)) + Short.toUnsignedInt(source.getShort(base + 14));
+        for (int i = 0; i < count; i++) {
+            int entry = base + 16 + i * 8;
+            if (source.getInt(entry) != type) continue;
+            int child = source.getInt(entry + 4);
+            if (child >= 0) throw new IllegalArgumentException("Invalid icon resource tree");
+            int directory = base + (child & 0x7fffffff);
+            int names = Short.toUnsignedInt(source.getShort(directory + 12)) + Short.toUnsignedInt(source.getShort(directory + 14));
+            for (int n = 0; n < names; n++) {
+                int nameEntry = directory + 16 + n * 8;
+                int subtree = source.getInt(nameEntry + 4);
+                if (subtree >= 0) throw new IllegalArgumentException("Invalid icon language directory");
+                var leaves = new ArrayList<Leaf>();
+                collect(source, base, subtree & 0x7fffffff, 1, 0, leaves);
+                result.put(source.getInt(nameEntry), leaves);
+            }
+        }
+        return result;
     }
 
     /// Locates a resource data RVA inside the original file's section map.
