@@ -9,6 +9,7 @@ import org.jackhuang.hmcl.gradle.l10n.CreateLocaleNamesResourceBundle
 import org.jackhuang.hmcl.gradle.l10n.SyncTranslations
 import org.jackhuang.hmcl.gradle.l10n.UpsideDownTranslate
 import org.jackhuang.hmcl.gradle.pack.CreateDeb
+import org.jackhuang.hmcl.gradle.pack.BrandWindowsLauncher
 import org.jackhuang.hmcl.gradle.pack.ReleaseType
 import org.jackhuang.hmcl.gradle.utils.PropertiesUtils
 import java.net.URI
@@ -71,6 +72,7 @@ if (nomiVersion != null) {
 }
 
 val embedResources = configurations.register("embedResources")
+val windowsLauncherStub = configurations.register("windowsLauncherStub")
 
 dependencies {
     implementation(project(":HMCLCore"))
@@ -91,6 +93,13 @@ dependencies {
 
     embedResources(libs.authlib.injector)
     embedResources(libs.lwjgl.unsafe.agent)
+    windowsLauncherStub(libs.hmclauncher)
+}
+
+val brandWindowsLauncher = tasks.register<BrandWindowsLauncher>("brandWindowsLauncher") {
+    sourceFile.fileProvider(if (launcherExe.isBlank()) windowsLauncherStub.map { it.singleFile } else provider { file(launcherExe) })
+    version.set(provider { project.version.toString() })
+    outputFile.set(layout.buildDirectory.file("generated/windows/HMCLauncher.exe"))
 }
 
 fun digest(algorithm: String, bytes: ByteArray): ByteArray = MessageDigest.getInstance(algorithm).digest(bytes)
@@ -212,6 +221,7 @@ val createPropertiesFile = tasks.register("createPropertiesFile") {
 
 tasks.jar {
     archiveBaseName.set("NomiLauncher")
+    archiveVersion.set("")
     enabled = false
     dependsOn(tasks["shadowJar"])
 }
@@ -220,6 +230,7 @@ val jarPath = tasks.jar.get().archiveFile.get().asFile
 
 tasks.shadowJar {
     archiveBaseName.set("NomiLauncher")
+    archiveVersion.set("")
     dependsOn(createPropertiesFile)
 
     archiveClassifier.set(null as String?)
@@ -252,12 +263,6 @@ tasks.shadowJar {
         "Enable-Final-Field-Mutation" to "ALL-UNNAMED",
     )
 
-    if (launcherExe.isNotBlank()) {
-        into("assets") {
-            from(file(launcherExe))
-        }
-    }
-
     doLast {
         attachSignature(jarPath)
         createChecksum(jarPath)
@@ -265,6 +270,9 @@ tasks.shadowJar {
 }
 
 tasks.processResources {
+    into("assets") {
+        from(brandWindowsLauncher.flatMap { it.outputFile })
+    }
     into("assets/legal") {
         from(rootProject.file("LICENSE"), rootProject.file("NOTICES.md"))
     }

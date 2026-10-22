@@ -19,6 +19,7 @@ dependencies {
     implementation("org.apache.maven:maven-artifact:3.9.16")
 
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.hmclauncher)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
