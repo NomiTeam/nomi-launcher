@@ -39,6 +39,16 @@ class NomiReleaseServiceTest {
         assertEquals("2.0.0-rc.1", java.util.Objects.requireNonNull(NomiReleaseService.select(releases, true)).version());
     }
 
+    /// Fixed filenames remain compatible with legacy versioned release assets.
+    @Test void acceptsFixedAssetName() {
+        var item = release("1.0.4", false);
+        var asset = item.getAsJsonArray("assets").get(0).getAsJsonObject();
+        asset.addProperty("name", "NomiLauncher.jar");
+        asset.addProperty("browser_download_url", "https://github.com/NomiTeam/nomi-launcher/releases/download/v1.0.4/NomiLauncher.jar");
+        var items = new JsonArray(); items.add(item);
+        assertEquals("1.0.4", java.util.Objects.requireNonNull(NomiReleaseService.select(items, false)).version());
+    }
+
     /// Incomplete, foreign and tampered asset metadata cannot become an executable download.
     @Test void rejectsUntrustedAssetsAndWrongTags() {
         for (String field : new String[]{"digest", "browser_download_url", "name", "size"}) {
