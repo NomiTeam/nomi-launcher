@@ -27,4 +27,7 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6.4.0
       - name: Test launcher, core and build tools
+        env:
+          # Match the ZIP-encoding fixtures without depending on the runner's Windows locale.
+          JAVA_TOOL_OPTIONS: -Dhmcl.native.encoding=GB18030
         run: .\gradlew.bat :buildSrc:test :HMCLCore:test :HMCL:test --no-daemon --console plain
