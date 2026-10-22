@@ -1,3 +1,10 @@
+# Branch workflow
+
+- Use `dev` for day-to-day commits and local validation.
+- Submit stable changes through a pull request from `dev` to `main`; do not commit directly on `main`.
+- CI runs on `main`, not on `dev`. Release tags must point to commits already merged into `main`.
+- Create or publish release tags only when explicitly requested by the user.
+
 # Java Code Style Requirements
 
 These rules apply to all Java code written or modified in this repository.

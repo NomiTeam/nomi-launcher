@@ -20,6 +20,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Require release commit to belong to main
+        run: git merge-base --is-ancestor HEAD origin/main
       - uses: actions/setup-java@v6.1.0
         with:
           distribution: temurin
