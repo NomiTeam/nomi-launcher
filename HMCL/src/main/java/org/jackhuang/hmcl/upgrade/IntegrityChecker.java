@@ -22,7 +22,6 @@ import org.jackhuang.hmcl.util.DigestUtils;
 import org.jackhuang.hmcl.util.Lang;
 import org.jackhuang.hmcl.util.io.IOUtils;
 import org.jackhuang.hmcl.util.io.JarUtils;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -107,25 +106,18 @@ public final class IntegrityChecker {
         }
     }
 
-    private static volatile @Nullable Boolean selfVerified = null;
-
-    public static @Nullable Boolean getSelfVerified() {
-        return selfVerified;
-    }
+    private static volatile Boolean selfVerified = null;
 
     /**
      * Checks whether the current application is verified.
      * This method is blocking.
      */
     public static boolean isSelfVerified() {
-        @Nullable Boolean selfVerified = IntegrityChecker.selfVerified;
-
         if (selfVerified != null) {
             return selfVerified;
         }
 
         synchronized (IntegrityChecker.class) {
-            selfVerified = IntegrityChecker.selfVerified;
             if (selfVerified != null) {
                 return selfVerified;
             }
@@ -143,7 +135,7 @@ public final class IntegrityChecker {
                 LOG.warning("Failed to verify myself, is the JAR corrupt?", e);
                 selfVerified = false;
             }
-            IntegrityChecker.selfVerified = selfVerified;
+
             return selfVerified;
         }
     }

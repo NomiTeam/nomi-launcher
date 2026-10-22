@@ -76,7 +76,7 @@ public final class ModpackHelper {
     );
 
     static {
-        MultiMCComponents.setImplementation(Metadata.FULL_NAME + " v" + Metadata.VERSION);
+        MultiMCComponents.setImplementation(Metadata.FULL_TITLE);
     }
 
     @Nullable
