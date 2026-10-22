@@ -93,6 +93,21 @@ class NomiServiceTest {
     /// Clipboard contents restored after rendering and command-copy verification.
     private static final Map<DataFormat, Object> savedClipboard = new HashMap<>();
 
+    /// Selects one deliberately stalled session endpoint for monitor regression tests.
+    private static volatile String slowSessionRoute = "";
+    /// Signals that a session request reached its endpoint.
+    private static volatile CountDownLatch sessionEntered = new CountDownLatch(0);
+    /// Releases the stalled session response.
+    private static volatile CountDownLatch sessionRelease = new CountDownLatch(0);
+
+    /// Holds a fake response without blocking UI-side account snapshots.
+    private static void stallSession(String route) {
+        if (!route.equals(slowSessionRoute)) return;
+        sessionEntered.countDown();
+        try { sessionRelease.await(10, TimeUnit.SECONDS); }
+        catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+    }
+
     /// Starts isolated routes before initializing the Nomi endpoint configuration.
     @BeforeAll
     static void setup() throws Exception {
@@ -160,6 +175,7 @@ class NomiServiceTest {
             exchange.close();
         });
         server.createContext("/api/v1/game/profile", exchange -> {
+            stallSession("profile");
             String token = exchange.getRequestHeaders().getFirst("Authorization");
             if ("Bearer game".equals(token) || "Bearer renewed-game".equals(token)) {
                 byte[] bytes = ("{\"id\":\"12345678901234567890123456789012\",\"name\":\"" + profileName + "\"}").getBytes(StandardCharsets.UTF_8);
@@ -171,8 +187,10 @@ class NomiServiceTest {
         server.createContext("/api/v1/sessions/refresh", exchange -> {
             String token = exchange.getRequestHeaders().getFirst("Authorization");
             if ("DELETE".equals(exchange.getRequestMethod())) {
+                stallSession("revoke");
                 exchange.sendResponseHeaders("Bearer revoke-failure".equals(token) ? 503 : 204, -1);
             } else if ("Bearer launcher-refresh".equals(token) || "Bearer wrong-profile".equals(token) || "Bearer drop-response".equals(token)) {
+                stallSession("refresh");
                 refreshed.incrementAndGet();
                 if ("Bearer drop-response".equals(token)) {
                     lostResponseKeys.add(Objects.requireNonNull(exchange.getRequestHeaders().getFirst("X-Request-ID")));
@@ -318,6 +336,61 @@ class NomiServiceTest {
         });
         awaitCancellation(before + 1);
     }
+    /// Slow validation, rotation and logout never hold the monitor used by UI saves; rotation preserves a concurrent rename.
+    @Test
+    void sessionNetworkOperationsDoNotBlockSnapshots() throws Exception {
+        for (String route : List.of("profile", "refresh", "revoke")) {
+            var account = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(new AuthlibInjectorServer(NomiService.AUTH),
+                    refreshSession(route.equals("refresh") ? "expired-game" : "game", "launcher-refresh"));
+            slowSessionRoute = route;
+            sessionEntered = new CountDownLatch(1);
+            sessionRelease = new CountDownLatch(1);
+            var pending = java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    if (route.equals("revoke")) account.revokeSession();
+                    else account.ensureGameSession();
+                } catch (AuthenticationException exception) { throw new java.util.concurrent.CompletionException(exception); }
+            });
+            try {
+                assertTrue(sessionEntered.await(5, TimeUnit.SECONDS));
+                var snapshot = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    var data = new JsonObject();
+                    account.writePrivateData(data);
+                    account.acceptProfileName("ConcurrentRename");
+                    return data;
+                });
+                assertEquals(route.equals("refresh") ? "expired-game" : "game", snapshot.get(1, TimeUnit.SECONDS).get("accessToken").getAsString());
+                assertFalse(pending.isDone());
+            } finally {
+                sessionRelease.countDown();
+                pending.get(5, TimeUnit.SECONDS);
+                slowSessionRoute = "";
+            }
+            assertEquals("ConcurrentRename", account.getProfileName());
+            if (route.equals("refresh")) {
+                var data = new JsonObject();
+                account.writePrivateData(data);
+                assertEquals("rotated-refresh", data.get(NomiAuthlibInjectorAccount.REFRESH_TOKEN_KEY).getAsString());
+            }
+            if (route.equals("revoke")) assertThrows(CredentialExpiredException.class, account::ensureGameSession);
+        }
+    }
+
+    /// Simultaneous account operations rotate a single-use credential only once.
+    @Test
+    void concurrentSessionChecksRotateOnce() throws Exception {
+        var account = (NomiAuthlibInjectorAccount) NomiService.accountFromSession(new AuthlibInjectorServer(NomiService.AUTH),
+                refreshSession("expired-game", "launcher-refresh"));
+        int before = refreshed.get();
+        var tasks = new java.util.ArrayList<java.util.concurrent.CompletableFuture<Void>>();
+        for (int i = 0; i < 8; i++) tasks.add(java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try { account.ensureGameSession(); }
+            catch (AuthenticationException exception) { throw new java.util.concurrent.CompletionException(exception); }
+        }));
+        java.util.concurrent.CompletableFuture.allOf(tasks.toArray(java.util.concurrent.CompletableFuture[]::new)).get(10, TimeUnit.SECONDS);
+        assertEquals(before + 1, refreshed.get());
+    }
+
     /// Account operations resume only for the originally requested profile after group verification.
     @Test
     void accountOperationsPreserveIdentity() throws Exception {

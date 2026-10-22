@@ -47,6 +47,13 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
     /// Current single-use refresh credential, stored only in private account data.
     private String refreshToken;
 
+    /// Serializes session network operations without blocking private-data snapshots.
+    private final java.util.concurrent.locks.ReentrantLock sessionOperations = new java.util.concurrent.locks.ReentrantLock();
+    /// Detects local renames made while a profile lookup is in flight.
+    private long nameRevision;
+    /// Prevents a removed account from silently creating another session.
+    private boolean revoked;
+
     /// Restores an external account and its separately scoped launcher credential.
     public NomiAuthlibInjectorAccount(AccountID id, AuthlibInjectorServer server,
             AuthlibInjectorArtifactProvider downloader, String loginName, YggdrasilSession session, String refreshToken) {
@@ -56,26 +63,49 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
     }
 
     /// Validates the game session and rotates the launcher credential only when renewal is needed.
-    public synchronized void ensureGameSession() throws AuthenticationException {
+    public void ensureGameSession() throws AuthenticationException {
+        try {
+            sessionOperations.lockInterruptibly();
+            try { checkGameSession(); }
+            finally { sessionOperations.unlock(); }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AuthenticationException("刷新请求已中断。", exception);
+        }
+    }
+
+    /// Checks one snapshot under the network-operation lock and publishes complete credentials atomically.
+    private void checkGameSession() throws AuthenticationException {
+        String access;
+        String refresh;
+        long revision;
+        synchronized (this) {
+            if (revoked) throw new CredentialExpiredException("该设备会话已注销，请重新登录。");
+            access = session.getAccessToken();
+            refresh = refreshToken;
+            revision = nameRevision;
+        }
         try {
             var profileRequest = HttpRequest.newBuilder(refreshEndpoint().resolve("../game/profile"))
-                    .timeout(Duration.ofSeconds(12)).header("Authorization", "Bearer " + session.getAccessToken()).GET().build();
+                    .timeout(Duration.ofSeconds(12)).header("Authorization", "Bearer " + access).GET().build();
             var profileResponse = HTTP.send(profileRequest, HttpResponse.BodyHandlers.ofString());
             if (profileResponse.statusCode() == 200) {
                 var profile = JsonParser.parseString(profileResponse.body()).getAsJsonObject();
                 if (!profileID.equals(org.glavo.uuid.UUIDs.parse(requireString(profile, "id"))))
                     throw new IOException("认证响应中的角色不匹配。");
                 String name = requireString(profile, "name");
-                if (!name.equals(getProfileName())) acceptProfileName(name);
+                synchronized (this) {
+                    if (revision == nameRevision && !name.equals(getProfileName())) acceptProfileName(name);
+                }
                 return;
             }
             if (profileResponse.statusCode() != 401 && profileResponse.statusCode() != 403)
                 throw new IOException("账号服务暂时不可用，请稍后重试。");
             // Stable across retries and process restarts; only the matching spent credential can recover a grant.
             String requestId = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(("nomi-refresh-v1:" + refreshToken).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                    .digest(("nomi-refresh-v1:" + refresh).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             var request = HttpRequest.newBuilder(refreshEndpoint()).timeout(Duration.ofSeconds(12))
-                    .header("Authorization", "Bearer " + refreshToken)
+                    .header("Authorization", "Bearer " + refresh)
                     .header("X-Request-ID", requestId)
                     .POST(HttpRequest.BodyPublishers.noBody()).build();
             var response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
@@ -94,10 +124,16 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
             var renewed = YggdrasilSession.fromStorage(metadata, privateData);
             if (!profileID.equals(renewed.getSelectedProfile().getId())) throw new IOException("刷新响应中的角色不匹配。");
             String nextRefresh = requireString(result, "refresh_token");
-            session = renewed;
-            refreshToken = nextRefresh;
-            Logger.registerAccessToken(nextRefresh);
-            invalidate();
+            synchronized (this) {
+                if (revision != nameRevision) {
+                    privateData.addProperty("profileName", getProfileName());
+                    renewed = YggdrasilSession.fromStorage(metadata, privateData);
+                }
+                session = renewed;
+                refreshToken = nextRefresh;
+                Logger.registerAccessToken(nextRefresh);
+                invalidate();
+            }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new AuthenticationException("刷新请求已中断。", exception);
@@ -122,9 +158,11 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
 
     /// Refreshes the private launcher session before constructing ordinary game-only auth information.
     @Override
-    public synchronized AuthInfo logIn() throws AuthenticationException {
+    public AuthInfo logIn() throws AuthenticationException {
         ensureGameSession();
-        return inject(session::toAuthInfo);
+        AuthInfo auth;
+        synchronized (this) { auth = session.toAuthInfo(); }
+        return inject(() -> auth);
     }
 
     /// Writes rotating credentials only to the launcher's private account file.
@@ -136,6 +174,7 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
 
     /// Applies a successful profile rename without replacing or losing a concurrently renewed credential.
     public synchronized void acceptProfileName(String name) {
+        nameRevision++;
         var metadata = new JsonObject();
         metadata.addProperty("profileID", profileID.toString());
         var data = new JsonObject();
@@ -146,12 +185,27 @@ public final class NomiAuthlibInjectorAccount extends AuthlibInjectorAccount {
     }
 
     /// Revokes this device session when an unclaimed login is discarded or the account is removed.
-    public synchronized void revokeSession() throws AuthenticationException {
+    public void revokeSession() throws AuthenticationException {
+        try {
+            sessionOperations.lockInterruptibly();
+            try { revokeCurrentSession(); }
+            finally { sessionOperations.unlock(); }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AuthenticationException("注销请求已中断。", exception);
+        }
+    }
+
+    /// Revokes the latest rotated credential while allowing UI reads throughout the request.
+    private void revokeCurrentSession() throws AuthenticationException {
+        String refresh;
+        synchronized (this) { refresh = refreshToken; }
         try {
             var request = HttpRequest.newBuilder(refreshEndpoint()).timeout(Duration.ofSeconds(12))
-                    .header("Authorization", "Bearer " + refreshToken).DELETE().build();
+                    .header("Authorization", "Bearer " + refresh).DELETE().build();
             var response = HTTP.send(request, HttpResponse.BodyHandlers.discarding());
             if (response.statusCode() != 204) throw new IOException("注销服务返回错误：" + response.statusCode());
+            synchronized (this) { revoked = true; }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new AuthenticationException("注销请求已中断。", exception);
