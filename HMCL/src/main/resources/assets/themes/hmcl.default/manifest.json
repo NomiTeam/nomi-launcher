@@ -1,35 +1,43 @@
 {
   "$schema": "https://schemas.glavo.site/hmcl/theme-pack/1.0.0",
   "id": "hmcl.default",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": {
-    "default": "Default",
-    "en-Qabs": "ʇꞁnɐɟǝᗡ",
-    "es": "Predeterminado",
-    "ja": "デフォルト",
-    "ru": "По умолчанию",
-    "uk": "За замовчуванням",
-    "zh-Hans": "默认主题",
-    "zh-Hant": "預設主題",
-    "lzh": "預設主題"
+    "default": "Nomi Town",
+    "zh-Hans": "糯米小镇",
+    "zh-Hant": "糯米小鎮"
   },
   "description": {
-    "default": "HMCL Default",
-    "es": "HMCL Predeterminado",
-    "ja": "HMCL デフォルト",
-    "ru": "HMCL По умолчанию",
-    "uk": "HMCL За замовчуванням",
-    "zh-Hans": "HMCL 默认主题",
-    "zh-Hant": "HMCL 預設主題",
-    "lzh": "HMCL 預設主題"
+    "default": "A cozy countryside of rice fields, vegetable gardens and warm wooden homes.",
+    "zh-Hans": "稻田、菜园与木屋，开启悠闲的田园生活。",
+    "zh-Hant": "稻田、菜園與木屋，開啟悠閒的田園生活。"
   },
   "authors": [
     {
-      "name": {
-        "default": "HMCL",
-        "en-Qabs": "ꞀƆWH"
-      }
+      "name": "NomiTeam"
     }
   ],
-  "theme": {}
+  "theme": {
+    "color": "#6B7D46",
+    "colorStyle": "tonal_spot",
+    "background": {
+      "type": "image",
+      "path": "assets/countryside.png",
+      "opacity": 0.86
+    },
+    "titleBar": {
+      "transparent": false
+    },
+    "windowTransparent": false,
+    "overrides": [
+      {
+        "condition": {
+          "brightness": "dark"
+        },
+        "background": {
+          "opacity": 0.46
+        }
+      }
+    ]
+  }
 }
