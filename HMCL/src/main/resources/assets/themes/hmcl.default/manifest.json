@@ -18,8 +18,8 @@
     }
   ],
   "theme": {
-    "color": "#6B7D46",
-    "colorStyle": "tonal_spot",
+    "color": "#80654B",
+    "colorStyle": "fidelity",
     "background": {
       "type": "image",
       "path": "assets/countryside.png",

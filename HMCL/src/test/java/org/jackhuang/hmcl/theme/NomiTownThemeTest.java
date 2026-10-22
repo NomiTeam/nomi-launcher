@@ -35,6 +35,7 @@ class NomiTownThemeTest {
             var scheme = theme.resolve(context).toResolvedTheme(context).toColorScheme();
             assertTrue(contrast(scheme.getColor(ColorRole.ON_SURFACE), scheme.getColor(ColorRole.SURFACE)) >= 7);
             assertTrue(contrast(scheme.getColor(ColorRole.ON_PRIMARY), scheme.getColor(ColorRole.PRIMARY)) >= 4.5);
+            assertTrue(contrast(scheme.getColor(ColorRole.ON_PRIMARY_CONTAINER), scheme.getColor(ColorRole.PRIMARY_CONTAINER)) >= 4.5);
         }
     }
 
