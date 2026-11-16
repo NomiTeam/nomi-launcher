@@ -17,6 +17,7 @@
  */
 package org.jackhuang.hmcl.game;
 
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import javafx.application.Platform;
 import javafx.beans.property.ObjectProperty;
@@ -307,8 +308,10 @@ public abstract class DefaultGameRepository implements GameRepository {
     /// Loads one instance directory without renaming on-disk JSON or jar files.
     ///
     /// When the conventional `versions/<id>/<id>.json` is missing but the directory contains exactly
-    /// one JSON file, that manifest path is recorded on the instance. The primary jar is derived as
-    /// the sibling path with the same base name.
+    /// one JSON file, that manifest path is recorded on the instance. If there are multiple JSON
+    /// files, selects the first parseable manifest in file-name order with a non-blank main class,
+    /// a parent instance, or non-empty patches. The primary jar is derived as the sibling path
+    /// with the same base name.
     ///
     /// @param snapshot the unsealed snapshot that will own the instance
     /// @param dir      the instance directory under `versions/`
@@ -332,12 +335,13 @@ public abstract class DefaultGameRepository implements GameRepository {
             json = conventionalJson;
         } else {
             List<Path> jsons = FileUtils.listFilesByExtension(dir, "json");
-            if (jsons.size() != 1) {
+            @Nullable Path candidate = jsons.size() == 1 ? jsons.get(0) : findInstanceManifest(jsons, id);
+            if (candidate == null) {
                 LOG.info("No available json file found, ignoring instance " + id);
                 return null;
             }
 
-            json = jsons.get(0);
+            json = candidate;
             if (!json.equals(conventionalJson)) {
                 manifestFileOverride = json;
             }
@@ -347,26 +351,55 @@ public abstract class DefaultGameRepository implements GameRepository {
 
         GameInstanceManifest manifest;
         try {
-            manifest = readInstanceManifest(json);
+            manifest = readInstanceManifest(json, id);
         } catch (Exception e) {
             LOG.warning("Malformed instance json " + id + " (" + json + ")", e);
             return null;
         }
 
-        // Directory name is the repository identity; keep the on-disk files untouched.
-        if (!id.equals(manifest.id())) {
-            manifest = manifest.withId(id);
-        }
-
         return createInstance(snapshot, id, manifest, manifestFileOverride);
     }
 
-    private static GameInstanceManifest readInstanceManifest(Path json) throws IOException, JsonParseException {
-        GameInstanceManifest manifest = JsonUtils.fromJsonFile(json, GameInstanceManifest.class);
-        if (manifest == null) {
+    /// Finds the first parseable manifest in file-name order with a non-blank main class,
+    /// a parent instance, or non-empty patches, skipping unreadable and malformed candidates.
+    ///
+    /// @param jsons the candidate JSON files; the list is not modified
+    /// @param id the directory-derived instance identity
+    /// @return the selected path, or `null` if no candidate matches
+    private static @Nullable Path findInstanceManifest(List<Path> jsons, GameInstanceID id) {
+        for (Path json : jsons.stream().sorted(Comparator.comparing(FileUtils::getName)).toList()) {
+            try {
+                GameInstanceManifest manifest = readInstanceManifest(json, id);
+                @Nullable String mainClass = manifest.mainClass();
+                if ((mainClass != null && !mainClass.isBlank())
+                        || manifest.inheritsFrom() != null
+                        || !manifest.getPatches().isEmpty()) {
+                    return json;
+                }
+            } catch (IOException | RuntimeException ignored) {
+            }
+        }
+        return null;
+    }
+
+    /// Reads an instance manifest using the directory-derived identity.
+    ///
+    /// Replaces the JSON object's `id` in memory before parsing the manifest, including when
+    /// the original member is absent, null, or invalid. The file is not modified.
+    ///
+    /// @param json the manifest file
+    /// @param id the directory-derived instance identity
+    /// @return the parsed manifest with the supplied identity
+    /// @throws IOException if the file cannot be read
+    /// @throws JsonParseException if the JSON is malformed, is not an object, or cannot be parsed as a manifest
+    private static GameInstanceManifest readInstanceManifest(Path json, GameInstanceID id) throws IOException, JsonParseException {
+        @Nullable JsonObject object = JsonUtils.fromJsonFile(json, JsonObject.class);
+        if (object == null) {
             throw new JsonParseException("Manifest is null");
         }
-        return manifest;
+        // Supply the repository identity before the manifest parser validates the required ID.
+        object.addProperty("id", id.toString());
+        return GameInstanceManifest.fromJson(object, false);
     }
 
     static void moveInstanceFiles(Path baseDirectory, GameInstanceID from, GameInstanceID to) throws IOException {
