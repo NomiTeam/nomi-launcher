@@ -1,1 +1,16 @@
 fc66cbcf965c4edfa6f68eeeae12150bdef6ed1d
+
+# Selective backports through upstream de39d2fc8; full merge base remains above.
+0d20910ea302a907d6a01fec9244ab10d2993d5e Block compromised eMudhra CA keys in application TLS validation (#7033)
+0874c98d215fa271630c5934e7de04651cee30f7 Fix TLS security tests on JDKs that block compromised certificates (#7065)
+41c61645e7457439f9a58e202ded2da319c6ac14 Detect instance manifests among multiple JSON files (#7048)
+0c40dcdeedeb8273025776ed5f44233a35d3f35f fix: honor declared modern Java requirements on legacy Linux instances (#7073)
+5ad4880182b5c0e0acbeafe57b9e944719f8c5f2 支持使用 CurseForge CDN 访问 NeoForge 相关文件 (#7092)
+967c32621900caa51e923799f6f47397ea3127a0 允许修改没有 patches 的原版实例 (#7145)
+75d070d8c908579216bd06bc53ba6e4adc13434d Enhance instance manifest handling and add failed task creation method (#7163)
+cfb0a8ce68192aa593a02bfd8078c86548f18550 refactor: move legacy checksum validation into Library (#7085)
+a543216e6705d99cd178c21fbc559f2388a63386 Exclude Cleanroom 0.7-alpha and later from available versions (#7218)
+193332a969b53e243c455e396121244ffa85e406 Fix: export logs of isolated instances (#7259)
+bd6770c473efed13edba7127fec09e7f82267a0a 改进 zip entry name 编码推断逻辑 (#7277)
+
+# Excluded: mainland download restrictions and region/build-label changes (#7017, #7020, #7028, #7046).
